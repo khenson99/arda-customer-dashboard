@@ -36,6 +36,13 @@ import { calculateHealthScore, type HealthScoringInput } from '../../lib/health-
 import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mappings';
 import { generateAlerts } from '../../lib/alerts';
 import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../lib/stripe-api';
+import {
+  enrichAccountFromHubSpot,
+  mapContactsToStakeholders,
+  mapDealsToOpportunities,
+  isHubSpotConfigured,
+  type HubSpotEnrichedData,
+} from '../../lib/hubspot-client';
 
 export default async function handler(
   req: VercelRequest,
@@ -206,14 +213,21 @@ export default async function handler(
     
     // Fetch Stripe data for commercial metrics enrichment
     // Try to match by Stripe customer ID first, then by email domain
-    const emailInfo = extractEmailInfo(tenantInfo.payload.tenantName);
+    const emailInfo2 = extractEmailInfo(tenantInfo.payload.tenantName);
     const stripeData = await fetchStripeDataForAccount(
-      emailInfo?.email,
+      emailInfo2?.email,
       mapping?.stripeId
     );
     
+    // Fetch HubSpot data for stakeholder enrichment
+    // Try to match by domain, with company name as fallback
+    const hubspotData = await fetchHubSpotDataForAccount(
+      mapping?.domain || emailInfo2?.domain,
+      mapping?.name
+    );
+    
     // Build commercial metrics with optional Stripe enrichment
-    const commercial = buildCommercialMetrics(tenantInfo, mapping, stripeData);
+    const commercial = buildCommercialMetrics(tenantInfo, mapping, stripeData, hubspotData);
     
     // Build support metrics (placeholder - would come from Zendesk/etc)
     const support = buildSupportMetrics();
@@ -236,8 +250,12 @@ export default async function handler(
     // Build timeline
     const timeline = buildTimeline(tenantItems, tenantKanbanCards, tenantOrders);
     
-    // Build stakeholders (from unique authors - simplified)
-    const stakeholders = buildStakeholders(uniqueAuthors);
+    // Build stakeholders - enrich with HubSpot contact data if available
+    const stakeholders = buildStakeholders(
+      uniqueAuthors,
+      hubspotData,
+      mapping?.accountId || tenantId
+    );
     
     // Determine lifecycle stage
     const lifecycleStage = health.score >= 70 && tenantOrders.length > 0
@@ -273,7 +291,7 @@ export default async function handler(
       ownerEmail: mapping?.ownerEmail,
       externalIds: {
         coda: mapping?.codaRowId,
-        hubspot: mapping?.hubspotId,
+        hubspot: hubspotData?.company?.id || mapping?.hubspotId,
         stripe: stripeData?.customerId || mapping?.stripeId,
       },
       createdAt: new Date(createdAt).toISOString(),
@@ -434,7 +452,8 @@ function buildUsageMetrics(
 function buildCommercialMetrics(
   tenant: ArdaTenant,
   mapping?: { tier?: string },
-  stripeData?: StripeEnrichedMetrics
+  stripeData?: StripeEnrichedMetrics,
+  hubspotData?: HubSpotEnrichedData
 ): CommercialMetrics {
   // Base commercial metrics from tenant data
   const baseMetrics: CommercialMetrics = {
@@ -444,6 +463,12 @@ function buildCommercialMetrics(
     expansionSignals: [],
     expansionPotential: 'none',
   };
+  
+  // Add open opportunities from HubSpot if available
+  let openOpportunities: CommercialMetrics['openOpportunities'];
+  if (hubspotData?.found && hubspotData.openDeals.length > 0) {
+    openOpportunities = mapDealsToOpportunities(hubspotData.openDeals);
+  }
   
   // Enrich with Stripe data if available
   if (stripeData?.found) {
@@ -463,10 +488,14 @@ function buildCommercialMetrics(
       overdueAmount: stripeData.overdueAmount,
       expansionSignals: baseMetrics.expansionSignals,
       expansionPotential: calculateExpansionPotential(stripeData),
+      openOpportunities,
     };
   }
   
-  return baseMetrics;
+  return {
+    ...baseMetrics,
+    openOpportunities,
+  };
 }
 
 /**
@@ -597,15 +626,50 @@ function buildTimeline(
   return events.slice(0, 100); // Return last 100 events
 }
 
-function buildStakeholders(uniqueAuthors: Set<string>): Stakeholder[] {
-  // In production, this would be enriched with CRM contact data
+function buildStakeholders(
+  uniqueAuthors: Set<string>,
+  hubspotData?: HubSpotEnrichedData,
+  accountId?: string
+): Stakeholder[] {
+  // If HubSpot data is available, use enriched contacts as stakeholders
+  if (hubspotData?.found && hubspotData.contacts.length > 0) {
+    const hubspotStakeholders = mapContactsToStakeholders(
+      hubspotData.contacts,
+      accountId || ''
+    );
+    
+    // Merge with Arda authors - add any authors not already in HubSpot
+    const hubspotEmails = new Set(
+      hubspotStakeholders.map(s => s.email?.toLowerCase()).filter(Boolean)
+    );
+    
+    const additionalStakeholders: Stakeholder[] = [];
+    for (const author of uniqueAuthors) {
+      const authorEmail = author.includes('@') ? author.toLowerCase() : null;
+      if (authorEmail && !hubspotEmails.has(authorEmail)) {
+        additionalStakeholders.push({
+          id: `arda-${author.slice(0, 8)}`,
+          accountId: accountId || '',
+          name: author.split('@')[0] || author.slice(0, 8),
+          email: author,
+          role: 'end_user',
+          isPrimary: false,
+          influence: 'low',
+        });
+      }
+    }
+    
+    return [...hubspotStakeholders, ...additionalStakeholders];
+  }
+  
+  // Fallback: build stakeholders from Arda authors only
   const stakeholders: Stakeholder[] = [];
   let isPrimary = true;
   
   for (const author of uniqueAuthors) {
     stakeholders.push({
       id: `stakeholder-${author.slice(0, 8)}`,
-      accountId: '',
+      accountId: accountId || '',
       name: author.split('@')[0] || author.slice(0, 8),
       email: author.includes('@') ? author : `${author}@unknown.com`,
       role: isPrimary ? 'power_user' : 'end_user',

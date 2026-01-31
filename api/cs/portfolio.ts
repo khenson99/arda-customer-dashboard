@@ -164,6 +164,16 @@ export default async function handler(
         continue;
       }
       
+      // Skip tenants with no stakeholders (users) AND no activity
+      const hasStakeholders = activityData.uniqueAuthors.size > 0;
+      const hasActivity = activityData.itemCount > 0 || 
+                          activityData.kanbanCardCount > 0 || 
+                          activityData.orderCount > 0;
+      
+      if (!hasStakeholders && !hasActivity) {
+        continue;
+      }
+      
       const tenantInfo = tenantInfoMap.get(tenantId);
       const createdAt = tenantInfo?.createdAt.effective || Date.now();
       const accountAgeDays = Math.floor((Date.now() - createdAt) / (1000 * 60 * 60 * 24));

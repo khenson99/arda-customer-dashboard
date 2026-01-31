@@ -57,6 +57,20 @@ import {
   type StripeInvoice,
   type StripeSubscription,
 } from '../hooks/useCommercialMetrics';
+import {
+  useHubSpotData,
+  formatCompanySize,
+  formatLifecycleStage,
+  getContactFullName,
+  type HubSpotContact,
+} from '../hooks/useHubSpotData';
+import {
+  HubSpotCard,
+  HubSpotLink,
+  SyncFromHubSpotButton,
+  HubSpotContactList,
+  HubSpotDealPipeline,
+} from './HubSpotCard';
 
 // ============================================================================
 // EMAIL INTEGRATION TYPES & HELPERS
@@ -119,6 +133,19 @@ export function Account360() {
   
   const { data: account, isLoading, error } = useAccountDetail(tenantId);
   const { alerts, criticalAlerts, hasCriticalAlerts } = useAccountAlerts(tenantId);
+  
+  // Extract domain from primary stakeholder email for HubSpot lookup
+  const primaryContact = account?.stakeholders?.find(s => s.isPrimary);
+  const accountDomain = useMemo(() => {
+    if (primaryContact?.email) {
+      const parts = primaryContact.email.split('@');
+      return parts.length > 1 ? parts[1] : undefined;
+    }
+    return account?.domain;
+  }, [primaryContact?.email, account?.domain]);
+  
+  // Fetch HubSpot CRM data
+  const hubspotData = useHubSpotData(accountDomain);
   
   // Build account data for email templates
   const emailAccountData = useMemo(() => {
@@ -197,6 +224,16 @@ export function Account360() {
               <div className="account-badges">
                 <span className={`tier-badge ${account.tier}`}>{account.tier}</span>
                 <span className={`lifecycle-badge ${account.lifecycleStage}`}>{account.lifecycleStage}</span>
+                {hubspotData.company?.industry && (
+                  <span className="industry-badge">
+                    🏢 {hubspotData.company.industry}
+                  </span>
+                )}
+                {hubspotData.company?.companySize && (
+                  <span className="size-badge">
+                    👥 {formatCompanySize(hubspotData.company.companySize)}
+                  </span>
+                )}
                 {account.ownerName && (
                   <span className="owner-badge">CSM: {account.ownerName}</span>
                 )}
@@ -306,6 +343,7 @@ export function Account360() {
               onOpenEmailModal={openEmailModal}
               onSwitchToSuccessPlan={() => setActiveTab('success_plan')}
               onSwitchToCommercial={() => setActiveTab('commercial')}
+              hubspotData={hubspotData}
             />
           )}
           {activeTab === 'health' && (
@@ -321,7 +359,14 @@ export function Account360() {
             <TimelineTab timeline={account.timeline} />
           )}
           {activeTab === 'stakeholders' && (
-            <StakeholdersTab stakeholders={account.stakeholders} />
+            <StakeholdersTab 
+              stakeholders={account.stakeholders}
+              hubspotContacts={hubspotData.contacts}
+              hubspotOwner={hubspotData.owner}
+              onSyncHubSpot={hubspotData.syncFromHubSpot}
+              lastSyncedAt={hubspotData.lastSyncedAt}
+              isSyncing={hubspotData.isLoading}
+            />
           )}
           {activeTab === 'tasks' && tenantId && (
             <TasksTab tenantId={tenantId} />
@@ -366,12 +411,21 @@ function HealthBadge({ score, grade, trend }: { score: number; grade: HealthGrad
   );
 }
 
-function OverviewTab({ account, alerts, onOpenEmailModal, onSwitchToSuccessPlan, onSwitchToCommercial }: { 
+function OverviewTab({ account, alerts, onOpenEmailModal, onSwitchToSuccessPlan, onSwitchToCommercial, hubspotData }: { 
   account: any; 
   alerts: Alert[];
   onOpenEmailModal: (category?: TemplateCategory) => void;
   onSwitchToSuccessPlan?: () => void;
   onSwitchToCommercial?: () => void;
+  hubspotData?: {
+    company: any;
+    contacts: HubSpotContact[];
+    deals: any[];
+    owner: any;
+    syncFromHubSpot: () => void;
+    isLoading: boolean;
+    lastSyncedAt?: string;
+  };
 }) {
   const usage = account.usage;
   const commercial = account.commercial;
@@ -599,6 +653,117 @@ function OverviewTab({ account, alerts, onOpenEmailModal, onSwitchToSuccessPlan,
           </div>
         )}
       </div>
+      
+      {/* CRM Section - HubSpot Integration */}
+      {hubspotData && (hubspotData.company || hubspotData.deals.length > 0) && (
+        <div className="glass-card crm-section">
+          <div className="crm-header">
+            <h3>🔗 CRM Overview</h3>
+            <div className="crm-actions">
+              <SyncFromHubSpotButton
+                onSync={hubspotData.syncFromHubSpot}
+                isLoading={hubspotData.isLoading}
+                lastSyncedAt={hubspotData.lastSyncedAt}
+              />
+              {hubspotData.company?.hubspotUrl && (
+                <HubSpotLink 
+                  url={hubspotData.company.hubspotUrl} 
+                  variant="button" 
+                  label="Open in HubSpot" 
+                />
+              )}
+            </div>
+          </div>
+          
+          <div className="crm-content">
+            {/* Company Info */}
+            {hubspotData.company && (
+              <div className="crm-company-info">
+                <div className="crm-info-grid">
+                  {hubspotData.company.industry && (
+                    <div className="crm-info-item">
+                      <span className="crm-info-label">Industry</span>
+                      <span className="crm-info-value">{hubspotData.company.industry}</span>
+                    </div>
+                  )}
+                  {hubspotData.company.companySize && (
+                    <div className="crm-info-item">
+                      <span className="crm-info-label">Company Size</span>
+                      <span className="crm-info-value">{formatCompanySize(hubspotData.company.companySize)}</span>
+                    </div>
+                  )}
+                  {hubspotData.company.location && (
+                    <div className="crm-info-item">
+                      <span className="crm-info-label">Location</span>
+                      <span className="crm-info-value">
+                        {[hubspotData.company.location.city, hubspotData.company.location.state, hubspotData.company.location.country].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {hubspotData.company.annualRevenue && (
+                    <div className="crm-info-item">
+                      <span className="crm-info-label">Annual Revenue</span>
+                      <span className="crm-info-value">
+                        ${(hubspotData.company.annualRevenue / 1000000).toFixed(1)}M
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* HubSpot Owner */}
+            {hubspotData.owner && (
+              <div className="crm-owner-info">
+                <span className="crm-owner-label">Account Manager (HubSpot)</span>
+                <div className="crm-owner-details">
+                  <div className="crm-owner-avatar">
+                    {hubspotData.owner.avatarUrl ? (
+                      <img src={hubspotData.owner.avatarUrl} alt={hubspotData.owner.fullName} />
+                    ) : (
+                      <span>{hubspotData.owner.fullName?.charAt(0) || '?'}</span>
+                    )}
+                  </div>
+                  <div className="crm-owner-text">
+                    <span className="crm-owner-name">{hubspotData.owner.fullName}</span>
+                    <span className="crm-owner-email">{hubspotData.owner.email}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Active Deals */}
+            {hubspotData.deals.length > 0 && (
+              <div className="crm-deals-section">
+                <h4>💼 Open Deals ({hubspotData.deals.length})</h4>
+                <div className="crm-deals-list">
+                  {hubspotData.deals.slice(0, 3).map((deal) => (
+                    <div key={deal.id} className="crm-deal-item">
+                      <div className="crm-deal-header">
+                        <span className="crm-deal-name">{deal.name}</span>
+                        <HubSpotLink url={deal.hubspotUrl} />
+                      </div>
+                      <div className="crm-deal-details">
+                        <span className="crm-deal-stage">{deal.stage}</span>
+                        {deal.amount && (
+                          <span className="crm-deal-amount">
+                            ${deal.amount.toLocaleString()}
+                          </span>
+                        )}
+                        {deal.closeDate && (
+                          <span className="crm-deal-close">
+                            Close: {new Date(deal.closeDate).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       
       {/* Recent Activity */}
       <div className="glass-card">
@@ -1119,7 +1284,21 @@ function TimelineTab({ timeline }: { timeline: TimelineEvent[] }) {
   );
 }
 
-function StakeholdersTab({ stakeholders }: { stakeholders: Stakeholder[] }) {
+function StakeholdersTab({ 
+  stakeholders, 
+  hubspotContacts, 
+  hubspotOwner,
+  onSyncHubSpot,
+  lastSyncedAt,
+  isSyncing,
+}: { 
+  stakeholders: Stakeholder[];
+  hubspotContacts?: HubSpotContact[];
+  hubspotOwner?: { fullName: string; email: string; avatarUrl?: string } | null;
+  onSyncHubSpot?: () => void;
+  lastSyncedAt?: string;
+  isSyncing?: boolean;
+}) {
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'champion': return '🌟';
@@ -1132,38 +1311,178 @@ function StakeholdersTab({ stakeholders }: { stakeholders: Stakeholder[] }) {
     }
   };
   
+  // Find matching HubSpot contact for a stakeholder
+  const findHubSpotContact = (email: string): HubSpotContact | undefined => {
+    return hubspotContacts?.find(c => c.email.toLowerCase() === email.toLowerCase());
+  };
+  
   return (
     <div className="stakeholders-tab">
-      <div className="glass-card">
-        <h3>👥 Stakeholders ({stakeholders.length})</h3>
-        <div className="stakeholders-list">
-          {stakeholders.map((stakeholder) => (
-            <div key={stakeholder.id} className={`stakeholder-card ${stakeholder.isPrimary ? 'primary' : ''}`}>
-              <div className="stakeholder-avatar">
-                {getRoleIcon(stakeholder.role)}
-              </div>
-              <div className="stakeholder-info">
-                <span className="stakeholder-name">{stakeholder.name}</span>
-                <span className="stakeholder-email">{stakeholder.email}</span>
-                <div className="stakeholder-badges">
-                  <span className="role-badge">{stakeholder.role.replace('_', ' ')}</span>
-                  <span className={`influence-badge ${stakeholder.influence}`}>
-                    {stakeholder.influence} influence
-                  </span>
-                </div>
-              </div>
-              {stakeholder.lastContactedAt && (
-                <div className="stakeholder-last-contact">
-                  Last contact: {formatRelativeTime(stakeholder.lastContactedAt)}
-                </div>
+      {/* HubSpot Owner Section */}
+      {hubspotOwner && (
+        <div className="glass-card hubspot-owner-card">
+          <div className="hubspot-owner-header">
+            <h3>🔗 HubSpot Owner</h3>
+            {onSyncHubSpot && (
+              <SyncFromHubSpotButton
+                onSync={onSyncHubSpot}
+                isLoading={isSyncing}
+                lastSyncedAt={lastSyncedAt}
+              />
+            )}
+          </div>
+          <div className="hubspot-owner-content">
+            <div className="hubspot-owner-avatar">
+              {hubspotOwner.avatarUrl ? (
+                <img src={hubspotOwner.avatarUrl} alt={hubspotOwner.fullName} />
+              ) : (
+                <span>{hubspotOwner.fullName.charAt(0)}</span>
               )}
             </div>
-          ))}
+            <div className="hubspot-owner-details">
+              <span className="hubspot-owner-name">{hubspotOwner.fullName}</span>
+              <span className="hubspot-owner-email">{hubspotOwner.email}</span>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <div className="glass-card">
+        <div className="stakeholders-header">
+          <h3>👥 Stakeholders ({stakeholders.length})</h3>
+          {onSyncHubSpot && !hubspotOwner && (
+            <SyncFromHubSpotButton
+              onSync={onSyncHubSpot}
+              isLoading={isSyncing}
+              lastSyncedAt={lastSyncedAt}
+            />
+          )}
+        </div>
+        <div className="stakeholders-list">
+          {stakeholders.map((stakeholder) => {
+            const hubspotContact = findHubSpotContact(stakeholder.email);
+            
+            return (
+              <div key={stakeholder.id} className={`stakeholder-card ${stakeholder.isPrimary ? 'primary' : ''} ${hubspotContact ? 'has-hubspot' : ''}`}>
+                <div className="stakeholder-avatar">
+                  {getRoleIcon(stakeholder.role)}
+                </div>
+                <div className="stakeholder-info">
+                  <div className="stakeholder-name-row">
+                    <span className="stakeholder-name">{stakeholder.name}</span>
+                    {hubspotContact && (
+                      <HubSpotLink url={hubspotContact.hubspotUrl} />
+                    )}
+                  </div>
+                  
+                  {/* HubSpot job title if available */}
+                  {hubspotContact?.jobTitle && (
+                    <span className="stakeholder-title">{hubspotContact.jobTitle}</span>
+                  )}
+                  
+                  <span className="stakeholder-email">{stakeholder.email}</span>
+                  
+                  {/* HubSpot phone if available */}
+                  {hubspotContact?.phone && (
+                    <span className="stakeholder-phone">📞 {hubspotContact.phone}</span>
+                  )}
+                  
+                  <div className="stakeholder-badges">
+                    <span className="role-badge">{stakeholder.role.replace('_', ' ')}</span>
+                    <span className={`influence-badge ${stakeholder.influence}`}>
+                      {stakeholder.influence} influence
+                    </span>
+                    
+                    {/* HubSpot lifecycle stage */}
+                    {hubspotContact?.lifecycleStage && (
+                      <span className={`hubspot-lifecycle-badge stage-${hubspotContact.lifecycleStage.toLowerCase()}`}>
+                        {formatLifecycleStage(hubspotContact.lifecycleStage)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="stakeholder-activity">
+                  {/* HubSpot last activity takes precedence */}
+                  {hubspotContact?.lastActivityDate ? (
+                    <div className="stakeholder-last-activity hubspot-activity">
+                      <span className="activity-label">Last HubSpot Activity</span>
+                      <span className="activity-time">{formatRelativeTime(hubspotContact.lastActivityDate)}</span>
+                    </div>
+                  ) : stakeholder.lastContactedAt && (
+                    <div className="stakeholder-last-contact">
+                      Last contact: {formatRelativeTime(stakeholder.lastContactedAt)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
           {stakeholders.length === 0 && (
             <p className="empty-state">No stakeholders identified yet</p>
           )}
         </div>
       </div>
+      
+      {/* HubSpot Contacts Not Linked */}
+      {hubspotContacts && hubspotContacts.length > 0 && (
+        <div className="glass-card hubspot-contacts-section">
+          <h3>🔗 HubSpot Contacts ({hubspotContacts.length})</h3>
+          <p className="section-description">Contacts from HubSpot CRM. Link to stakeholders above for unified view.</p>
+          <div className="hubspot-contacts-list">
+            {hubspotContacts.map((contact) => {
+              const isLinked = stakeholders.some(s => s.email.toLowerCase() === contact.email.toLowerCase());
+              
+              return (
+                <div key={contact.id} className={`hubspot-contact-item ${isLinked ? 'linked' : ''}`}>
+                  <div className="hubspot-contact-avatar">
+                    {(contact.firstName || contact.lastName) ? (
+                      <span>
+                        {contact.firstName?.charAt(0) || ''}
+                        {contact.lastName?.charAt(0) || ''}
+                      </span>
+                    ) : (
+                      <span>@</span>
+                    )}
+                  </div>
+                  
+                  <div className="hubspot-contact-info">
+                    <div className="hubspot-contact-header">
+                      <span className="hubspot-contact-name">{getContactFullName(contact)}</span>
+                      <HubSpotLink url={contact.hubspotUrl} />
+                      {isLinked && <span className="linked-badge">✓ Linked</span>}
+                    </div>
+                    
+                    {contact.jobTitle && (
+                      <span className="hubspot-contact-title">{contact.jobTitle}</span>
+                    )}
+                    
+                    <div className="hubspot-contact-meta">
+                      <span className="hubspot-contact-email">{contact.email}</span>
+                      {contact.phone && (
+                        <span className="hubspot-contact-phone">{contact.phone}</span>
+                      )}
+                    </div>
+                    
+                    <div className="hubspot-contact-badges">
+                      {contact.lifecycleStage && (
+                        <span className={`hubspot-lifecycle-badge stage-${contact.lifecycleStage.toLowerCase()}`}>
+                          {formatLifecycleStage(contact.lifecycleStage)}
+                        </span>
+                      )}
+                      {contact.lastActivityDate && (
+                        <span className="hubspot-last-activity">
+                          Last activity: {formatRelativeTime(contact.lastActivityDate)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       
       {/* Stakeholder Coverage Analysis */}
       <div className="glass-card">
