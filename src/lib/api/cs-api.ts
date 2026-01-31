@@ -10,9 +10,15 @@ import type { AccountSummary, AccountDetail, Alert, Interaction, InteractionType
 // API base URL - uses relative path in production, configurable in dev
 const API_BASE = '/api/cs';
 
+// Get API key from environment or localStorage
+const getApiKey = () => {
+  return import.meta.env.VITE_ARDA_API_KEY || localStorage.getItem('arda_api_key') || '';
+};
+
 // Common headers for API requests
 const createHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
+  'x-arda-api-key': getApiKey(),
 });
 
 // ============================================================================
@@ -91,6 +97,39 @@ export interface AlertsResponse {
   highCount: number;
   mediumCount?: number;
   lowCount?: number;
+}
+
+export interface AlertNotePayload {
+  content: string;
+  createdBy: string;
+}
+
+/**
+ * Update a single alert (status, notes, ownership, etc.).
+ */
+export async function updateAlert(alertId: string, update: Partial<Alert>): Promise<void> {
+  const response = await fetch(`${API_BASE}/alerts?alertId=${encodeURIComponent(alertId)}`, {
+    method: 'PATCH',
+    headers: createHeaders(),
+    body: JSON.stringify(update),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `API Error: ${response.status}`);
+  }
+}
+
+export async function addAlertNote(alertId: string, note: AlertNotePayload): Promise<void> {
+  const response = await fetch(`${API_BASE}/alerts?alertId=${encodeURIComponent(alertId)}`, {
+    method: 'PATCH',
+    headers: createHeaders(),
+    body: JSON.stringify({ note }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `API Error: ${response.status}`);
+  }
 }
 
 /**
