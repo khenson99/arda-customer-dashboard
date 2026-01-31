@@ -2154,6 +2154,11 @@ h3 {
   flex-shrink: 0;
 }
 
+.alert-severity-indicator.severity-critical { background-color: #ef4444; }
+.alert-severity-indicator.severity-high { background-color: #f97316; }
+.alert-severity-indicator.severity-medium { background-color: #eab308; }
+.alert-severity-indicator.severity-low { background-color: #22c55e; }
+
 .alert-main-content {
   flex: 1;
   min-width: 0;
@@ -2317,6 +2322,74 @@ h3 {
 
 .btn-secondary:hover {
   background: var(--bg-secondary);
+}
+
+.btn-outline {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-outline:hover {
+  background: rgba(252, 89, 40, 0.1);
+}
+
+/* Alert SLA Badge */
+.alert-sla-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.alert-sla-badge.breached { background: rgba(239, 68, 68, 0.15); }
+.alert-sla-badge.at_risk { background: rgba(245, 158, 11, 0.15); }
+.alert-sla-badge.on_track { background: rgba(34, 197, 94, 0.15); }
+
+/* Alert Owner */
+.alert-owner {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Alert SLA Info in expanded view */
+.alert-sla-info {
+  margin-bottom: var(--spacing-md);
+  font-size: 0.85rem;
+}
+
+.alert-sla-info strong {
+  color: var(--text-primary);
+}
+
+.sla-deadline {
+  margin-left: var(--spacing-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.sla-deadline.breached { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+.sla-deadline.at_risk { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+.sla-deadline.on_track { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+
+/* Alert Stats Bar - Clickable items */
+.alert-stats-bar .stat-item {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.alert-stats-bar .stat-item:hover {
+  transform: translateY(-2px);
+}
+
+.alert-stats-bar .stat-item.active {
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
 }
 
 /* Tab Navigation Alert Badge */

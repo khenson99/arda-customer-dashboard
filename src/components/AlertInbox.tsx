@@ -9,16 +9,12 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TabNavigation } from './TabNavigation';
-import { fetchAlerts, queryKeys, defaultQueryOptions } from '../lib/api/cs-api';
-import type { Alert, AlertSeverity, AlertCategory, AlertStatus } from '../lib/types/account';
+import { fetchAlerts, queryKeys, defaultQueryOptions, type AlertWithAccount } from '../lib/api/cs-api';
+import type { AlertSeverity, AlertCategory, AlertStatus } from '../lib/types/account';
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface AlertWithAccount extends Alert {
-  accountName: string;
-}
 
 type FilterSeverity = AlertSeverity | 'all';
 type FilterCategory = AlertCategory | 'all';
@@ -327,13 +323,6 @@ interface AlertListItemProps {
 function AlertListItem({ alert, onAcknowledge }: AlertListItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  const severityColors: Record<AlertSeverity, string> = {
-    critical: '#ef4444',
-    high: '#f97316',
-    medium: '#eab308',
-    low: '#22c55e',
-  };
-  
   const categoryIcons: Record<AlertCategory, string> = {
     risk: '⚠️',
     opportunity: '💡',
@@ -349,10 +338,7 @@ function AlertListItem({ alert, onAcknowledge }: AlertListItemProps) {
   return (
     <div className={`alert-list-item severity-${alert.severity}`}>
       <div className="alert-list-header" onClick={() => setIsExpanded(!isExpanded)}>
-        <div 
-          className="alert-severity-indicator" 
-          style={{ backgroundColor: severityColors[alert.severity] }} 
-        />
+        <div className={`alert-severity-indicator severity-${alert.severity}`} />
         
         <div className="alert-main-content">
           <div className="alert-title-row">

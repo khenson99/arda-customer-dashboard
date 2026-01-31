@@ -81,11 +81,17 @@ export async function fetchAccountDetail(accountId: string): Promise<AccountDeta
 // Alert API
 // ============================================================================
 
+export interface AlertWithAccount extends Alert {
+  accountName: string;
+}
+
 export interface AlertsResponse {
-  alerts: Alert[];
+  alerts: AlertWithAccount[];
   totalCount: number;
   criticalCount: number;
   highCount: number;
+  mediumCount?: number;
+  lowCount?: number;
 }
 
 /**

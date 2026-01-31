@@ -182,14 +182,21 @@ export async function fetchCustomerByEmail(
   apiKey: string
 ): Promise<StripeCustomer | null> {
   try {
+    console.log('[Stripe API] Searching for customer by email:', email);
     const result = await stripeGet<StripeListResponse<StripeCustomer>>(
       '/customers',
       apiKey,
       { email, limit: '1' }
     );
+    console.log('[Stripe API] Email search result:', {
+      email,
+      found: result.data.length > 0,
+      customerId: result.data[0]?.id,
+      customerName: result.data[0]?.name,
+    });
     return result.data.length > 0 ? result.data[0] : null;
   } catch (error) {
-    console.error('Failed to fetch Stripe customer by email:', error);
+    console.error('[Stripe API] Failed to fetch Stripe customer by email:', error);
     return null;
   }
 }

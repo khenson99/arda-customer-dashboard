@@ -550,12 +550,20 @@ async function fetchStripeDataForAccount(
 ): Promise<StripeEnrichedMetrics | undefined> {
   const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
   
+  console.log('[Stripe Debug] Attempting Stripe lookup:', {
+    email,
+    stripeCustomerId,
+    hasStripeKey: !!stripeKey,
+    keyPrefix: stripeKey ? stripeKey.slice(0, 10) + '...' : 'none',
+  });
+  
   if (!stripeKey) {
-    // Stripe not configured - fail gracefully
+    console.log('[Stripe Debug] No Stripe API key configured');
     return undefined;
   }
   
   if (!email && !stripeCustomerId) {
+    console.log('[Stripe Debug] No email or customer ID provided');
     return undefined;
   }
   
@@ -568,10 +576,18 @@ async function fetchStripeDataForAccount(
       stripeKey
     );
     
+    console.log('[Stripe Debug] Stripe lookup result:', {
+      found: stripeData.found,
+      customerId: stripeData.customerId,
+      plan: stripeData.plan,
+      arr: stripeData.arr,
+      mrr: stripeData.mrr,
+      paymentStatus: stripeData.paymentStatus,
+    });
+    
     return stripeData.found ? stripeData : undefined;
   } catch (error) {
-    // Log but don't fail the request
-    console.warn('Failed to fetch Stripe data:', error);
+    console.error('[Stripe Debug] Failed to fetch Stripe data:', error);
     return undefined;
   }
 }
