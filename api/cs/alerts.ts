@@ -8,7 +8,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import type { Alert, AlertSeverity, AlertStatus, AlertOutcome } from '../../src/lib/types/account.js';
+import type { Alert, AlertSeverity, AlertStatus, AlertOutcome, SLAStatus } from '../../src/lib/types/account.js';
 import { 
   aggregateByTenant, 
   fetchTenants,
@@ -69,8 +69,26 @@ interface AlertUpdateResponse {
   note?: AlertNote;
 }
 
+// Extended alert type for stored updates (includes fields not in base Alert)
+interface StoredAlertUpdate {
+  // Fields from Alert that can be updated
+  status?: AlertStatus;
+  acknowledgedAt?: string;
+  resolvedAt?: string;
+  outcome?: AlertOutcome;
+  ownerId?: string;
+  ownerName?: string;
+  slaStatus?: SLAStatus;
+  // Additional fields stored with updates
+  acknowledgedBy?: string;
+  snoozedUntil?: string;
+  snoozeReason?: string;
+  resolvedBy?: string;
+  notes?: AlertNote[];
+}
+
 // In-memory storage for alert updates (would be database in production)
-const alertUpdates = new Map<string, Partial<AlertWithAccount & { notes: AlertNote[] }>>();
+const alertUpdates = new Map<string, StoredAlertUpdate>();
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
