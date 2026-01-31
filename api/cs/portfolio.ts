@@ -215,37 +215,64 @@ export default async function handler(
       // Build activity trend (last 8 weeks)
       const activityTrend = buildActivityTrend(activityData.activityTimestamps);
       
+      // Get Stripe data if available (for commercial metrics)
+      const stripeData = stripeDataMap.get(tenantId);
+      
+      // Build commercial metrics for alert generation
+      const commercial = stripeData?.found ? {
+        plan: stripeData.plan || 'Unknown',
+        arr: stripeData.arr,
+        mrr: stripeData.mrr,
+        currency: stripeData.currency || 'USD',
+        daysToRenewal: stripeData.daysToRenewal,
+        renewalDate: stripeData.renewalDate,
+        paymentStatus: stripeData.paymentStatus,
+        overdueAmount: stripeData.overdueAmount,
+        expansionSignals: [],
+        expansionPotential: 'none' as const,
+      } : undefined;
+      
+      // Build activity timeline for usage_decline alert detection
+      const activityTimelineForAlerts = buildActivityTimelineForAlerts(
+        activityData.activityTimestamps,
+        activityData
+      );
+      
+      // Build usage metrics for alert generation
+      const usage = {
+        itemCount: activityData.itemCount,
+        kanbanCardCount: activityData.kanbanCardCount,
+        orderCount: activityData.orderCount,
+        totalUsers: activityData.uniqueAuthors.size,
+        activeUsersLast7Days: healthInput.activeUsersLast7Days,
+        activeUsersLast30Days: healthInput.activeUsersLast30Days,
+        daysActive: 0,
+        daysSinceLastActivity,
+        avgActionsPerDay: 0,
+        featureAdoption: { items: 0, kanban: 0, ordering: 0, receiving: 0, reporting: 0 },
+        outcomes: { ordersPlaced: activityData.orderCount, ordersReceived: 0 },
+        activityTimeline: activityTimelineForAlerts,
+      };
+      
       // Generate alerts for count
-      const alerts = generateAlerts({
+      const alertInput = {
         accountId: mapping?.accountId || tenantId,
         accountName: mapping?.name || `Org ${tenantId.slice(0, 8)}`,
         health,
-        usage: {
-          itemCount: activityData.itemCount,
-          kanbanCardCount: activityData.kanbanCardCount,
-          orderCount: activityData.orderCount,
-          totalUsers: activityData.uniqueAuthors.size,
-          activeUsersLast7Days: healthInput.activeUsersLast7Days,
-          activeUsersLast30Days: healthInput.activeUsersLast30Days,
-          daysActive: 0,
-          daysSinceLastActivity,
-          avgActionsPerDay: 0,
-          featureAdoption: { items: 0, kanban: 0, ordering: 0, receiving: 0, reporting: 0 },
-          outcomes: { ordersPlaced: activityData.orderCount, ordersReceived: 0 },
-          activityTimeline: [],
-        },
+        usage,
+        commercial, // Pass commercial metrics for renewal/payment alerts
         accountAgeDays,
         tier: mapping?.tier,
         segment: mapping?.segment,
+        arr: stripeData?.arr, // Pass ARR for arrAtRisk calculation
         ownerId: mapping?.ownerId,
         ownerName: mapping?.ownerName,
-      });
+      };
+      
+      const alerts = generateAlerts(alertInput);
       
       const alertCount = alerts.length;
       const criticalAlertCount = alerts.filter(a => a.severity === 'critical').length;
-      
-      // Get Stripe data if available
-      const stripeData = stripeDataMap.get(tenantId);
       
       accounts.push({
         id: mapping?.accountId || tenantId,
@@ -408,6 +435,46 @@ function buildActivityTrend(timestamps: number[]): number[] {
   }
   
   return weeks;
+}
+
+/**
+ * Build activity timeline for usage_decline alert detection
+ * Returns weekly activity data points for the last 8 weeks
+ */
+function buildActivityTimelineForAlerts(
+  timestamps: number[],
+  activityData: { itemCount: number; kanbanCardCount: number; orderCount: number }
+): { date: string; items: number; kanbanCards: number; orders: number; activeUsers: number }[] {
+  const timeline: { date: string; items: number; kanbanCards: number; orders: number; activeUsers: number }[] = [];
+  const now = Date.now();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  
+  // Estimate distribution of activity across weeks based on timestamps
+  // This is a rough approximation since we don't have entity-level timestamps in portfolio view
+  const weekCounts: number[] = [];
+  for (let i = 7; i >= 0; i--) {
+    const weekStart = now - ((i + 1) * weekMs);
+    const weekEnd = now - (i * weekMs);
+    weekCounts.push(timestamps.filter(t => t >= weekStart && t < weekEnd).length);
+  }
+  
+  const totalActivity = weekCounts.reduce((a, b) => a + b, 0);
+  
+  for (let i = 0; i < 8; i++) {
+    const weekStart = now - ((8 - i) * weekMs);
+    const weekLabel = new Date(weekStart).toISOString().split('T')[0];
+    const ratio = totalActivity > 0 ? weekCounts[i] / totalActivity : 0;
+    
+    timeline.push({
+      date: weekLabel,
+      items: Math.round(activityData.itemCount * ratio),
+      kanbanCards: Math.round(activityData.kanbanCardCount * ratio),
+      orders: Math.round(activityData.orderCount * ratio),
+      activeUsers: weekCounts[i] > 0 ? 1 : 0,
+    });
+  }
+  
+  return timeline;
 }
 
 function deriveAccountName(tenantId: string, tenantInfo?: ArdaTenant): string {

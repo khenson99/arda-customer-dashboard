@@ -20,16 +20,145 @@ import type {
   Stakeholder,
   Interaction,
   Task,
+  Alert,
+  AlertType,
 } from '../lib/types/account';
 
 // Track whether we should use the new API
 let useNewApi = true;
 
 /**
+ * Generate alerts based on account data.
+ * Mirrors the alert generation logic in arda-client.ts fetchCustomerMetrics.
+ */
+function generateAlertsFromDetails(
+  details: CustomerDetails,
+  tenantId: string,
+  healthScore: number,
+  daysInactive: number,
+  accountAgeDays: number
+): Alert[] {
+  const alerts: Alert[] = [];
+  const now = new Date().toISOString();
+  const itemCount = details.items.length;
+  const kanbanCount = details.kanbanCards.length;
+  const totalActivity = itemCount + kanbanCount;
+  const stage = details.stage;
+
+  // Churn Risk: No activity for 14+ days
+  if (daysInactive >= 14) {
+    alerts.push({
+      id: `alert-churn-inactive-${tenantId}`,
+      accountId: tenantId,
+      type: 'churn_risk' as AlertType,
+      category: 'risk',
+      severity: daysInactive >= 30 ? 'critical' : 'high',
+      title: `No activity for ${daysInactive} days`,
+      description: 'Customer has not shown any product activity recently, which may indicate disengagement.',
+      evidence: [`Last activity: ${daysInactive} days ago`, `Health score: ${healthScore}`],
+      suggestedAction: 'Schedule a check-in call to re-engage the customer',
+      slaStatus: daysInactive >= 30 ? 'at_risk' : 'on_track',
+      status: 'open',
+      createdAt: now,
+    });
+  }
+
+  // Churn Risk: Low health score
+  if (healthScore < 40) {
+    alerts.push({
+      id: `alert-churn-health-${tenantId}`,
+      accountId: tenantId,
+      type: 'health_drop' as AlertType,
+      category: 'risk',
+      severity: healthScore < 25 ? 'critical' : 'high',
+      title: `Health score critically low (${healthScore})`,
+      description: 'Account health has dropped to a concerning level requiring immediate attention.',
+      evidence: [`Current health score: ${healthScore}`, `Stage: ${stage}`],
+      suggestedAction: 'Review account activity and schedule intervention',
+      slaStatus: healthScore < 25 ? 'at_risk' : 'on_track',
+      status: 'open',
+      createdAt: now,
+    });
+  }
+
+  // Onboarding Stalled: Few items after account creation
+  if (accountAgeDays > 7 && itemCount < 5 && stage !== 'live') {
+    alerts.push({
+      id: `alert-onboarding-${tenantId}`,
+      accountId: tenantId,
+      type: 'onboarding_stalled' as AlertType,
+      category: 'action_required',
+      severity: accountAgeDays > 14 ? 'high' : 'medium',
+      title: `Onboarding stalled - only ${itemCount} items after ${accountAgeDays} days`,
+      description: 'Customer appears to be stuck in onboarding with minimal product adoption.',
+      evidence: [`Items created: ${itemCount}`, `Account age: ${accountAgeDays} days`, `Stage: ${stage}`],
+      suggestedAction: 'Offer onboarding assistance or training session',
+      slaStatus: 'on_track',
+      status: 'open',
+      createdAt: now,
+    });
+  }
+
+  // Low Engagement: Account exists but minimal usage
+  if (accountAgeDays > 30 && totalActivity < 10 && daysInactive >= 7) {
+    alerts.push({
+      id: `alert-low-engagement-${tenantId}`,
+      accountId: tenantId,
+      type: 'low_engagement' as AlertType,
+      category: 'risk',
+      severity: 'medium',
+      title: 'Low product engagement detected',
+      description: 'Customer shows minimal product usage compared to expected benchmarks.',
+      evidence: [`Total activity: ${totalActivity}`, `Days inactive: ${daysInactive}`],
+      suggestedAction: 'Reach out to understand blockers and offer training',
+      slaStatus: 'on_track',
+      status: 'open',
+      createdAt: now,
+    });
+  }
+
+  // Expansion Opportunity: High activity and engagement
+  if (totalActivity > 50 && details.users.length >= 3 && daysInactive < 7) {
+    alerts.push({
+      id: `alert-expansion-${tenantId}`,
+      accountId: tenantId,
+      type: 'expansion_opportunity' as AlertType,
+      category: 'opportunity',
+      severity: 'low',
+      title: 'High engagement - expansion opportunity',
+      description: 'Customer shows strong product adoption and may be ready for additional features.',
+      evidence: [`Active users: ${details.users.length}`, `Total activity: ${totalActivity}`],
+      suggestedAction: 'Consider upsell conversation for additional features',
+      slaStatus: 'none',
+      status: 'open',
+      createdAt: now,
+    });
+  }
+
+  return alerts;
+}
+
+/**
  * Transform legacy CustomerDetails to AccountDetail format.
  */
 function transformLegacyToDetail(details: CustomerDetails, tenantId: string): AccountDetail {
   const now = new Date().toISOString();
+  
+  // Calculate days inactive and account age for alert generation
+  const createdAtDate = new Date(details.createdAt);
+  const accountAgeDays = Math.floor((Date.now() - createdAtDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // Estimate days since last activity from item/kanban timestamps
+  let lastActivityTime = createdAtDate.getTime();
+  for (const item of details.items) {
+    const itemTime = new Date(item.createdAt).getTime();
+    if (itemTime > lastActivityTime) lastActivityTime = itemTime;
+  }
+  for (const card of details.kanbanCards) {
+    const cardTime = new Date(card.createdAt).getTime();
+    if (cardTime > lastActivityTime) lastActivityTime = cardTime;
+  }
+  const daysInactive = Math.floor((Date.now() - lastActivityTime) / (1000 * 60 * 60 * 24));
   
   // Build a basic health object
   const health: AccountHealth = {
@@ -49,6 +178,9 @@ function transformLegacyToDetail(details: CustomerDetails, tenantId: string): Ac
     confidence: 50,
   };
   
+  // Generate alerts based on account data
+  const alerts = generateAlertsFromDetails(details, tenantId, details.healthScore, daysInactive, accountAgeDays);
+  
   // Build usage metrics
   const usage: UsageMetrics = {
     itemCount: details.items.length,
@@ -57,9 +189,9 @@ function transformLegacyToDetail(details: CustomerDetails, tenantId: string): Ac
     totalUsers: details.users.length,
     activeUsersLast7Days: Math.min(details.users.length, 1),
     activeUsersLast30Days: details.users.length,
-    daysActive: 0,
-    daysSinceLastActivity: 0,
-    avgActionsPerDay: 0,
+    daysActive: accountAgeDays - daysInactive,
+    daysSinceLastActivity: daysInactive,
+    avgActionsPerDay: accountAgeDays > 0 ? (details.items.length + details.kanbanCards.length) / accountAgeDays : 0,
     featureAdoption: {
       items: Math.min(100, details.items.length * 2),
       kanban: Math.min(100, details.kanbanCards.length * 2),
@@ -134,7 +266,7 @@ function transformLegacyToDetail(details: CustomerDetails, tenantId: string): Ac
       normalTickets: 0,
       escalationCount: 0,
     },
-    alerts: [],
+    alerts,
     stakeholders,
     recentInteractions: [],
     openTasks: [],

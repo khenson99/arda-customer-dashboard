@@ -232,7 +232,7 @@ export default async function handler(
     const support = buildSupportMetrics();
     
     // Generate alerts
-    const alerts = generateAlerts({
+    const alertInput = {
       accountId: mapping?.accountId || tenantId,
       accountName: mapping?.name || deriveAccountName(tenantId, tenantInfo),
       health,
@@ -242,9 +242,25 @@ export default async function handler(
       accountAgeDays,
       tier: mapping?.tier,
       segment: mapping?.segment,
+      arr: commercial.arr, // Pass ARR for arrAtRisk calculation
       ownerId: mapping?.ownerId,
       ownerName: mapping?.ownerName,
+    };
+    
+    console.log('[Alert Generation] Account detail input:', {
+      accountId: alertInput.accountId,
+      accountName: alertInput.accountName,
+      healthScore: health?.score,
+      daysSinceLastActivity: usage?.daysSinceLastActivity,
+      daysToRenewal: commercial?.daysToRenewal,
+      arr: commercial?.arr,
+      accountAgeDays,
     });
+    
+    const alerts = generateAlerts(alertInput);
+    
+    console.log('[Alert Generation] Generated', alerts.length, 'alerts:', 
+      alerts.map(a => ({ type: a.type, severity: a.severity, title: a.title })));
     
     // Build timeline
     const timeline = buildTimeline(tenantItems, tenantKanbanCards, tenantOrders);

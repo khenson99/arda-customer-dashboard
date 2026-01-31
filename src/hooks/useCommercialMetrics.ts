@@ -9,25 +9,6 @@ import { useQuery } from '@tanstack/react-query';
 import { defaultQueryOptions } from '../lib/api/cs-api';
 import type { CommercialMetrics } from '../lib/types/account';
 
-// API base URL
-const API_BASE = '/api/cs';
-
-// Get API key from environment or localStorage
-const getApiKey = (): string => {
-  return import.meta.env.VITE_ARDA_API_KEY || localStorage.getItem('arda_api_key') || '';
-};
-
-const getAuthor = (): string => {
-  return import.meta.env.VITE_ARDA_AUTHOR || localStorage.getItem('arda_author') || 'dashboard@arda.cards';
-};
-
-// Common headers for API requests
-const createHeaders = (): HeadersInit => ({
-  'Content-Type': 'application/json',
-  'X-Arda-API-Key': getApiKey(),
-  'X-Arda-Author': getAuthor(),
-});
-
 // ============================================================================
 // Stripe Commercial Data Types
 // ============================================================================
@@ -75,24 +56,8 @@ export interface CommercialData extends CommercialMetrics {
 }
 
 // ============================================================================
-// API Functions
+// Helper Functions
 // ============================================================================
-
-/**
- * Fetch commercial/billing data from the CS API (Stripe integration).
- */
-async function fetchCommercialFromApi(email: string): Promise<CommercialData> {
-  const response = await fetch(`${API_BASE}/commercial/${encodeURIComponent(email)}`, {
-    method: 'GET',
-    headers: createHeaders(),
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Commercial API Error: ${response.status}`);
-  }
-  
-  return response.json();
-}
 
 /**
  * Generate mock commercial data for development/fallback.
@@ -190,39 +155,113 @@ export const commercialQueryKey = (accountId: string) => ['cs', 'commercial', ac
 /**
  * Hook to fetch commercial/billing metrics for an account.
  * 
+ * Uses the commercial data already fetched by the account detail API.
+ * The account detail endpoint enriches with Stripe data server-side.
+ * 
  * @param accountId - The account ID
- * @param email - Primary contact email (used for Stripe lookup)
- * @param fallbackCommercial - Fallback commercial data from account
+ * @param email - Primary contact email (not used directly, kept for API compatibility)
+ * @param accountCommercial - Commercial data from the account detail response
  */
 export function useCommercialMetrics(
   accountId: string | undefined,
   email: string | undefined,
-  fallbackCommercial?: CommercialMetrics
+  accountCommercial?: CommercialMetrics
 ) {
   return useQuery({
     queryKey: commercialQueryKey(accountId || ''),
     queryFn: async (): Promise<CommercialData> => {
-      if (!email) {
-        // No email, use fallback/mock data
-        return generateMockCommercialData(fallbackCommercial);
+      // Use the commercial data from the account detail API
+      // This data is already enriched with Stripe data server-side
+      if (accountCommercial) {
+        return transformToCommercialData(accountCommercial);
       }
       
-      try {
-        const data = await fetchCommercialFromApi(email);
-        return {
-          ...data,
-          source: 'stripe',
-          fetchedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        console.warn('Commercial API failed, using fallback:', error);
-        return generateMockCommercialData(fallbackCommercial);
-      }
+      // Fallback to minimal data if no commercial data available
+      return generateMockCommercialData(undefined);
     },
     ...defaultQueryOptions,
     enabled: !!accountId,
     staleTime: 5 * 60 * 1000, // 5 minutes for billing data
   });
+}
+
+/**
+ * Transform CommercialMetrics from the account API to CommercialData format.
+ */
+function transformToCommercialData(commercial: CommercialMetrics): CommercialData {
+  const now = new Date();
+  
+  // Calculate days to period end from renewal date
+  const daysToEnd = commercial.renewalDate
+    ? Math.ceil((new Date(commercial.renewalDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    : 30;
+  
+  return {
+    // Base commercial metrics (pass through)
+    plan: commercial.plan,
+    arr: commercial.arr,
+    mrr: commercial.mrr,
+    currency: commercial.currency,
+    contractStartDate: commercial.contractStartDate,
+    contractEndDate: commercial.contractEndDate,
+    renewalDate: commercial.renewalDate,
+    daysToRenewal: commercial.daysToRenewal,
+    termMonths: commercial.termMonths,
+    autoRenew: commercial.autoRenew,
+    seatLimit: commercial.seatLimit,
+    seatUsage: commercial.seatUsage,
+    seatUtilization: commercial.seatUtilization,
+    paymentStatus: commercial.paymentStatus,
+    lastPaymentDate: commercial.lastPaymentDate,
+    overdueAmount: commercial.overdueAmount,
+    expansionSignals: commercial.expansionSignals || [],
+    expansionPotential: commercial.expansionPotential,
+    openOpportunities: commercial.openOpportunities,
+    
+    // Build subscription info from available data
+    subscription: commercial.plan ? {
+      id: 'sub_from_account',
+      status: mapPaymentStatusToSubscriptionStatus(commercial.paymentStatus),
+      planName: commercial.plan,
+      billingInterval: commercial.termMonths && commercial.termMonths >= 12 ? 'year' : 'month',
+      currentPeriodStart: commercial.contractStartDate || now.toISOString(),
+      currentPeriodEnd: commercial.renewalDate || commercial.contractEndDate || now.toISOString(),
+      cancelAtPeriodEnd: commercial.autoRenew === false,
+    } : undefined,
+    
+    // Invoice data not available from account API
+    recentInvoices: [],
+    
+    // Computed fields
+    isOverdue: commercial.paymentStatus === 'overdue',
+    overdueCount: commercial.overdueAmount && commercial.overdueAmount > 0 ? 1 : 0,
+    totalOverdueAmount: commercial.overdueAmount || 0,
+    daysToCurrentPeriodEnd: daysToEnd,
+    
+    // Source info
+    source: commercial.arr || commercial.mrr ? 'stripe' : 'account',
+    fetchedAt: now.toISOString(),
+  };
+}
+
+/**
+ * Map payment status to Stripe subscription status.
+ */
+function mapPaymentStatusToSubscriptionStatus(
+  paymentStatus?: 'current' | 'overdue' | 'at_risk' | 'churned' | 'unknown'
+): StripeSubscription['status'] {
+  switch (paymentStatus) {
+    case 'current':
+      return 'active';
+    case 'overdue':
+      return 'past_due';
+    case 'at_risk':
+      return 'past_due';
+    case 'churned':
+      return 'canceled';
+    default:
+      return 'active';
+  }
 }
 
 // ============================================================================

@@ -113,12 +113,21 @@ const ALERT_DEFINITIONS: AlertDefinition[] = [
   
   // ============================================================================
   // HEALTH DROP ALERTS
+  // Note: Requires `previousHealth` to be passed in input. 
+  // Currently, previousHealth tracking requires persisting health scores over time.
+  // TODO: Implement health score history tracking in a database to enable this alert.
   // ============================================================================
   {
     type: 'health_drop',
     category: 'risk',
     check: (input) => {
-      if (!input.health || !input.previousHealth) return null;
+      if (!input.health || !input.previousHealth) {
+        // Log when health_drop check is skipped due to missing previousHealth
+        if (input.health && !input.previousHealth && process.env.DEBUG_ALERTS === 'true') {
+          console.log(`[Alerts] health_drop skipped for ${input.accountName}: previousHealth not available`);
+        }
+        return null;
+      }
       
       const drop = input.previousHealth.score - input.health.score;
       
@@ -594,12 +603,39 @@ export function generateAlerts(input: AlertGenerationInput): Alert[] {
   const alerts: Alert[] = [];
   const now = new Date().toISOString();
   
+  // Debug logging for alert generation input
+  const debugMode = process.env.DEBUG_ALERTS === 'true';
+  
+  if (debugMode) {
+    console.log('[Alerts] Generating alerts for:', input.accountName);
+    console.log('[Alerts] Input data:', {
+      hasHealth: !!input.health,
+      healthScore: input.health?.score,
+      hasPreviousHealth: !!input.previousHealth,
+      hasUsage: !!input.usage,
+      daysSinceLastActivity: input.usage?.daysSinceLastActivity,
+      activeUsersLast30Days: input.usage?.activeUsersLast30Days,
+      totalUsers: input.usage?.totalUsers,
+      hasCommercial: !!input.commercial,
+      daysToRenewal: input.commercial?.daysToRenewal,
+      paymentStatus: input.commercial?.paymentStatus,
+      hasSupport: !!input.support,
+      criticalTickets: input.support?.criticalTickets,
+      accountAgeDays: input.accountAgeDays,
+      arr: input.arr,
+    });
+  }
+  
   for (const definition of ALERT_DEFINITIONS) {
     try {
       const result = definition.check(input);
       
+      if (debugMode) {
+        console.log(`[Alerts] Check ${definition.type}:`, result ? 'TRIGGERED' : 'no trigger');
+      }
+      
       if (result) {
-        alerts.push({
+        const alert: Alert = {
           id: `${definition.type}-${input.accountId}-${Date.now()}`,
           accountId: input.accountId,
           type: definition.type,
@@ -619,11 +655,27 @@ export function generateAlerts(input: AlertGenerationInput): Alert[] {
           status: 'open',
           createdAt: now,
           arrAtRisk: definition.category === 'risk' ? input.arr : undefined,
-        });
+        };
+        
+        // Validate alert has all required fields
+        if (!alert.id || !alert.title || !alert.description || !alert.suggestedAction) {
+          console.warn(`[Alerts] Alert ${definition.type} missing required fields:`, {
+            hasId: !!alert.id,
+            hasTitle: !!alert.title,
+            hasDescription: !!alert.description,
+            hasSuggestedAction: !!alert.suggestedAction,
+          });
+        }
+        
+        alerts.push(alert);
       }
     } catch (error) {
-      console.error(`Error checking alert ${definition.type}:`, error);
+      console.error(`[Alerts] Error checking alert ${definition.type}:`, error);
     }
+  }
+  
+  if (debugMode) {
+    console.log(`[Alerts] Generated ${alerts.length} alerts for ${input.accountName}`);
   }
   
   // Sort by severity (critical first) then by ARR at risk

@@ -7,9 +7,9 @@
 
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TabNavigation } from './TabNavigation';
-import { fetchCustomerMetrics } from '../lib/arda-client';
+import { fetchAlerts, queryKeys, defaultQueryOptions } from '../lib/api/cs-api';
 import type { Alert, AlertSeverity, AlertCategory, AlertStatus } from '../lib/types/account';
 
 // ============================================================================
@@ -17,7 +17,7 @@ import type { Alert, AlertSeverity, AlertCategory, AlertStatus } from '../lib/ty
 // ============================================================================
 
 interface AlertWithAccount extends Alert {
-  accountName?: string;
+  accountName: string;
 }
 
 type FilterSeverity = AlertSeverity | 'all';
@@ -30,88 +30,38 @@ type SortOption = 'severity' | 'newest' | 'oldest' | 'sla' | 'arr';
 // ============================================================================
 
 export function AlertInbox() {
+  // Query client for cache invalidation
+  const queryClient = useQueryClient();
+  
   // Filters
   const [severityFilter, setSeverityFilter] = useState<FilterSeverity>('all');
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>('all');
-  const [statusFilter] = useState<FilterStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('severity');
   
-  // Fetch real alerts from customer metrics
-  const { data: metrics, isLoading, error } = useQuery({
-    queryKey: ['alerts', 'customerMetrics'],
-    queryFn: fetchCustomerMetrics,
-    staleTime: 60_000,
+  // Fetch alerts from the dedicated alerts API
+  const { data: alertsResponse, isLoading, error } = useQuery({
+    queryKey: queryKeys.alerts({ severityFilter, statusFilter }),
+    queryFn: () => fetchAlerts({
+      // Only apply server-side filters if they're set (for efficiency)
+      severity: severityFilter !== 'all' ? severityFilter : undefined,
+      status: statusFilter !== 'all' && statusFilter !== 'snoozed' && statusFilter !== 'resolved' 
+        ? statusFilter as 'open' | 'acknowledged' | 'in_progress' 
+        : undefined,
+    }),
+    ...defaultQueryOptions,
   });
   
-  if (error) {
-    return (
-      <div className="dashboard">
-        <TabNavigation />
-        <div className="dashboard-content">
-          <div className="error-message">
-            Failed to load alerts. Please check your Arda API key.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="dashboard">
-        <TabNavigation />
-        <div className="dashboard-content">
-          <div className="loading-state">
-            <div className="loading-spinner" />
-            <p>Loading alerts...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Extract and enrich alerts from metrics
-  const allAlerts = useMemo(() => {
-    if (!metrics) return [];
-    const alerts: AlertWithAccount[] = [];
-
-    metrics.forEach((m) => {
-      m.alerts.forEach((a, idx) => {
-        const severityMap: Record<string, AlertSeverity> = {
-          critical: 'critical',
-          warning: 'high',
-          info: 'low',
-        };
-        const category: AlertCategory =
-          a.type === 'expansion_opportunity' ? 'opportunity' :
-          a.type === 'onboarding_stalled' ? 'action_required' : 'risk';
-
-        alerts.push({
-          id: `${a.type}-${m.tenantId}-${idx}`,
-          accountId: m.tenantId,
-          accountName: m.displayName || m.companyName,
-          type: a.type as any,
-          category,
-          severity: severityMap[a.severity] || 'medium',
-          title: a.message,
-          description: a.suggestedAction,
-          evidence: [`Health: ${m.healthScore}`, `Stage: ${m.stage}`, `Inactive days: ${m.daysInactive}`],
-          suggestedAction: a.suggestedAction,
-          slaStatus: 'none',
-          status: 'open',
-          createdAt: m.lastActivityDate,
-        });
-      });
-    });
-
-    return alerts;
-  }, [metrics]);
+  // All alerts from API response (with account name enrichment)
+  const allAlerts: AlertWithAccount[] = useMemo(() => {
+    if (!alertsResponse?.alerts) return [];
+    return alertsResponse.alerts as AlertWithAccount[];
+  }, [alertsResponse]);
   
-  // Apply filters
+  // Apply client-side filters (category, search, and status filters not supported by API)
   const filteredAlerts = useMemo(() => {
     return allAlerts.filter(alert => {
-      if (severityFilter !== 'all' && alert.severity !== severityFilter) return false;
       if (categoryFilter !== 'all' && alert.category !== categoryFilter) return false;
       if (statusFilter !== 'all' && alert.status !== statusFilter) return false;
       if (searchQuery) {
@@ -123,15 +73,16 @@ export function AlertInbox() {
       }
       return true;
     });
-  }, [allAlerts, severityFilter, categoryFilter, statusFilter, searchQuery]);
+  }, [allAlerts, categoryFilter, statusFilter, searchQuery]);
   
   // Apply sorting
   const sortedAlerts = useMemo(() => {
     return [...filteredAlerts].sort((a, b) => {
       switch (sortBy) {
-        case 'severity':
-          const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-          return (severityOrder[a.severity] || 4) - (severityOrder[b.severity] || 4);
+        case 'severity': {
+          const severityOrder: Record<AlertSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+          return severityOrder[a.severity] - severityOrder[b.severity];
+        }
         case 'newest':
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         case 'oldest':
@@ -149,24 +100,58 @@ export function AlertInbox() {
     });
   }, [filteredAlerts, sortBy]);
   
-  // Stats
+  // Stats computed from all alerts (not filtered)
   const stats = useMemo(() => ({
     total: allAlerts.length,
     critical: allAlerts.filter(a => a.severity === 'critical').length,
     high: allAlerts.filter(a => a.severity === 'high').length,
     medium: allAlerts.filter(a => a.severity === 'medium').length,
+    low: allAlerts.filter(a => a.severity === 'low').length,
     risks: allAlerts.filter(a => a.category === 'risk').length,
     opportunities: allAlerts.filter(a => a.category === 'opportunity').length,
-    totalArrAtRisk: allAlerts.filter(a => a.category === 'risk').reduce((sum, a) => sum + (a.arrAtRisk || 0), 0),
+    totalArrAtRisk: allAlerts
+      .filter(a => a.category === 'risk')
+      .reduce((sum, a) => sum + (a.arrAtRisk || 0), 0),
   }), [allAlerts]);
   
+  // Mutation for acknowledging alerts (placeholder - would integrate with backend)
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      // TODO: Implement server-side alert acknowledgment
+      console.log('Acknowledging alert:', alertId);
+      return { success: true };
+    },
+    onSuccess: () => {
+      // Invalidate alerts cache to refresh
+      queryClient.invalidateQueries({ queryKey: ['cs', 'alerts'] });
+    },
+  });
+  
+  // Handle error state
   if (error) {
     return (
       <div className="dashboard">
         <TabNavigation />
         <div className="dashboard-content">
           <div className="error-message">
-            Failed to load alerts. Please try again.
+            <div className="error-icon">⚠️</div>
+            <p>Failed to load alerts. Please check your Arda API key.</p>
+            <p className="error-detail">{error instanceof Error ? error.message : 'Unknown error'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle loading state
+  if (isLoading) {
+    return (
+      <div className="dashboard">
+        <TabNavigation />
+        <div className="dashboard-content">
+          <div className="loading-state">
+            <div className="loading-spinner" />
+            <p>Loading alerts...</p>
           </div>
         </div>
       </div>
@@ -187,17 +172,33 @@ export function AlertInbox() {
         
         {/* Stats Bar */}
         <div className="alert-stats-bar">
-          <div className="stat-item critical">
+          <div 
+            className={`stat-item critical ${severityFilter === 'critical' ? 'active' : ''}`}
+            onClick={() => setSeverityFilter(severityFilter === 'critical' ? 'all' : 'critical')}
+          >
             <span className="stat-value">{stats.critical}</span>
             <span className="stat-label">Critical</span>
           </div>
-          <div className="stat-item high">
+          <div 
+            className={`stat-item high ${severityFilter === 'high' ? 'active' : ''}`}
+            onClick={() => setSeverityFilter(severityFilter === 'high' ? 'all' : 'high')}
+          >
             <span className="stat-value">{stats.high}</span>
             <span className="stat-label">High</span>
           </div>
-          <div className="stat-item medium">
+          <div 
+            className={`stat-item medium ${severityFilter === 'medium' ? 'active' : ''}`}
+            onClick={() => setSeverityFilter(severityFilter === 'medium' ? 'all' : 'medium')}
+          >
             <span className="stat-value">{stats.medium}</span>
             <span className="stat-label">Medium</span>
+          </div>
+          <div 
+            className={`stat-item low ${severityFilter === 'low' ? 'active' : ''}`}
+            onClick={() => setSeverityFilter(severityFilter === 'low' ? 'all' : 'low')}
+          >
+            <span className="stat-value">{stats.low}</span>
+            <span className="stat-label">Low</span>
           </div>
           <div className="stat-divider" />
           <div className="stat-item risks">
@@ -234,6 +235,7 @@ export function AlertInbox() {
               value={severityFilter} 
               onChange={(e) => setSeverityFilter(e.target.value as FilterSeverity)}
               className="filter-select"
+              aria-label="Filter by severity"
             >
               <option value="all">All Severities</option>
               <option value="critical">Critical</option>
@@ -246,6 +248,7 @@ export function AlertInbox() {
               value={categoryFilter} 
               onChange={(e) => setCategoryFilter(e.target.value as FilterCategory)}
               className="filter-select"
+              aria-label="Filter by category"
             >
               <option value="all">All Categories</option>
               <option value="risk">Risks</option>
@@ -255,9 +258,24 @@ export function AlertInbox() {
             </select>
             
             <select 
+              value={statusFilter} 
+              onChange={(e) => setStatusFilter(e.target.value as FilterStatus)}
+              className="filter-select"
+              aria-label="Filter by status"
+            >
+              <option value="all">All Status</option>
+              <option value="open">Open</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="snoozed">Snoozed</option>
+            </select>
+            
+            <select 
               value={sortBy} 
               onChange={(e) => setSortBy(e.target.value as SortOption)}
               className="filter-select"
+              aria-label="Sort alerts by"
             >
               <option value="severity">Sort by Severity</option>
               <option value="newest">Newest First</option>
@@ -269,12 +287,7 @@ export function AlertInbox() {
         </div>
         
         {/* Alerts List */}
-        {isLoading ? (
-          <div className="loading-state">
-            <div className="loading-spinner" />
-            <p>Loading alerts...</p>
-          </div>
-        ) : sortedAlerts.length > 0 ? (
+        {sortedAlerts.length > 0 ? (
           <div className="alerts-list-container">
             <div className="alerts-count">
               Showing {sortedAlerts.length} of {allAlerts.length} alerts
@@ -282,7 +295,11 @@ export function AlertInbox() {
             
             <div className="alerts-list">
               {sortedAlerts.map((alert) => (
-                <AlertListItem key={alert.id} alert={alert} />
+                <AlertListItem 
+                  key={alert.id} 
+                  alert={alert}
+                  onAcknowledge={() => acknowledgeMutation.mutate(alert.id)}
+                />
               ))}
             </div>
           </div>
@@ -302,33 +319,52 @@ export function AlertInbox() {
 // Sub-Components
 // ============================================================================
 
-function AlertListItem({ alert }: { alert: AlertWithAccount }) {
+interface AlertListItemProps {
+  alert: AlertWithAccount;
+  onAcknowledge?: () => void;
+}
+
+function AlertListItem({ alert, onAcknowledge }: AlertListItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  const severityColors = {
+  const severityColors: Record<AlertSeverity, string> = {
     critical: '#ef4444',
     high: '#f97316',
     medium: '#eab308',
     low: '#22c55e',
   };
   
-  const categoryIcons = {
+  const categoryIcons: Record<AlertCategory, string> = {
     risk: '⚠️',
     opportunity: '💡',
     action_required: '⚡',
     informational: 'ℹ️',
   };
   
+  const handleAcknowledge = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAcknowledge?.();
+  };
+  
   return (
     <div className={`alert-list-item severity-${alert.severity}`}>
       <div className="alert-list-header" onClick={() => setIsExpanded(!isExpanded)}>
-        <div className="alert-severity-indicator" style={{ backgroundColor: severityColors[alert.severity] }} />
+        <div 
+          className="alert-severity-indicator" 
+          style={{ backgroundColor: severityColors[alert.severity] }} 
+        />
         
         <div className="alert-main-content">
           <div className="alert-title-row">
             <span className="alert-category-icon">{categoryIcons[alert.category]}</span>
             <h4 className="alert-title">{alert.title}</h4>
             <span className={`alert-severity-badge ${alert.severity}`}>{alert.severity}</span>
+            {alert.slaStatus && alert.slaStatus !== 'none' && (
+              <span className={`alert-sla-badge ${alert.slaStatus}`}>
+                {alert.slaStatus === 'breached' ? '🔴' : alert.slaStatus === 'at_risk' ? '🟡' : '🟢'}
+                SLA
+              </span>
+            )}
           </div>
           
           <div className="alert-meta-row">
@@ -343,11 +379,14 @@ function AlertListItem({ alert }: { alert: AlertWithAccount }) {
             )}
             <span className="alert-type-badge">{alert.type.replace(/_/g, ' ')}</span>
             <span className="alert-time">{formatRelativeTime(alert.createdAt)}</span>
+            {alert.ownerName && (
+              <span className="alert-owner">Assigned: {alert.ownerName}</span>
+            )}
           </div>
         </div>
         
         <div className="alert-actions">
-          {alert.arrAtRisk && (
+          {alert.arrAtRisk && alert.arrAtRisk > 0 && (
             <span className="arr-at-risk-badge">${alert.arrAtRisk.toLocaleString()} ARR</span>
           )}
           <button className="expand-btn">{isExpanded ? '▼' : '▶'}</button>
@@ -369,17 +408,39 @@ function AlertListItem({ alert }: { alert: AlertWithAccount }) {
             </div>
           )}
           
-          <div className="alert-suggested-action">
-            <strong>Suggested Action:</strong>
-            <p>{alert.suggestedAction}</p>
-          </div>
+          {alert.suggestedAction && (
+            <div className="alert-suggested-action">
+              <strong>Suggested Action:</strong>
+              <p>{alert.suggestedAction}</p>
+            </div>
+          )}
+          
+          {alert.slaDeadline && (
+            <div className="alert-sla-info">
+              <strong>SLA Deadline:</strong>
+              <span className={`sla-deadline ${alert.slaStatus}`}>
+                {new Date(alert.slaDeadline).toLocaleString()}
+              </span>
+            </div>
+          )}
           
           <div className="alert-action-buttons">
-            <button className="btn-primary">Acknowledge</button>
-            <button className="btn-secondary">Snooze</button>
+            {alert.status === 'open' && (
+              <button className="btn-primary" onClick={handleAcknowledge}>
+                Acknowledge
+              </button>
+            )}
+            {(alert.status === 'open' || alert.status === 'acknowledged') && (
+              <button className="btn-secondary">Snooze</button>
+            )}
             <Link to={`/account/${alert.accountId}`} className="btn-secondary">
               View Account
             </Link>
+            {alert.playbook && (
+              <button className="btn-outline">
+                Run Playbook: {alert.playbook}
+              </button>
+            )}
           </div>
         </div>
       )}
