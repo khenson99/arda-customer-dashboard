@@ -428,24 +428,22 @@ function EngagementSparkline({ data }: { data: Array<{ week: string; activity: n
   
   return (
     <div className="engagement-sparkline">
-      <ResponsiveContainer width={80} height={28}>
-        <AreaChart data={data} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
-          <defs>
-            <linearGradient id="sparkGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#FC5928" stopOpacity={0.8} />
-              <stop offset="100%" stopColor="#FC5928" stopOpacity={0.1} />
-            </linearGradient>
-          </defs>
-          <Area
-            type="monotone"
-            dataKey="activity"
-            stroke="#FC5928"
-            strokeWidth={1.5}
-            fill="url(#sparkGradient)"
-            isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+      <AreaChart width={80} height={28} data={data} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+        <defs>
+          <linearGradient id="sparkGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#FC5928" stopOpacity={0.8} />
+            <stop offset="100%" stopColor="#FC5928" stopOpacity={0.1} />
+          </linearGradient>
+        </defs>
+        <Area
+          type="monotone"
+          dataKey="activity"
+          stroke="#FC5928"
+          strokeWidth={1.5}
+          fill="url(#sparkGradient)"
+          isAnimationActive={false}
+        />
+      </AreaChart>
       {!hasActivity && (
         <span className="sparkline-empty">—</span>
       )}

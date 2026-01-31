@@ -59,7 +59,10 @@ describe('App row navigation', () => {
   it('uses SPA navigation instead of full page reload', async () => {
     const user = userEvent.setup();
     render(
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter
+        initialEntries={['/']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <App />
       </MemoryRouter>
     );
