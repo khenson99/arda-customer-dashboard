@@ -167,8 +167,18 @@ export function useCommercialMetrics(
   email: string | undefined,
   accountCommercial?: CommercialMetrics
 ) {
+  const commercialSnapshot = accountCommercial
+    ? {
+        plan: accountCommercial.plan,
+        arr: accountCommercial.arr,
+        mrr: accountCommercial.mrr,
+        renewalDate: accountCommercial.renewalDate,
+        paymentStatus: accountCommercial.paymentStatus,
+      }
+    : null;
+
   return useQuery({
-    queryKey: commercialQueryKey(accountId || ''),
+    queryKey: ['cs', 'commercial', accountId || '', commercialSnapshot],
     queryFn: async (): Promise<CommercialData> => {
       // Use the commercial data from the account detail API
       // This data is already enriched with Stripe data server-side
@@ -180,7 +190,8 @@ export function useCommercialMetrics(
       return generateMockCommercialData(undefined);
     },
     ...defaultQueryOptions,
-    enabled: !!accountId,
+    enabled: !!accountId && !accountCommercial,
+    initialData: accountCommercial ? transformToCommercialData(accountCommercial) : undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes for billing data
   });
 }

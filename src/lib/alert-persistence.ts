@@ -40,7 +40,8 @@ export async function acknowledgeAlert(alertId: string): Promise<void> {
     status: 'acknowledged' as AlertStatus,
     acknowledgedAt: new Date().toISOString(),
     acknowledgedBy: user.id,
-  });
+    actionLogEntry: buildActionLog(alertId, 'acknowledged', user),
+  } as any);
 }
 
 export async function snoozeAlert(alertId: string, days: number, reason?: string): Promise<void> {
@@ -50,7 +51,8 @@ export async function snoozeAlert(alertId: string, days: number, reason?: string
     status: 'snoozed' as AlertStatus,
     snoozedUntil: until.toISOString(),
     snoozeReason: reason,
-  });
+    actionLogEntry: buildActionLog(alertId, 'snoozed', getCurrentUser(), { days, reason }),
+  } as any);
 }
 
 export type OutcomeResult = 'success' | 'partial' | 'failed' | 'not_applicable';
@@ -66,14 +68,16 @@ export async function resolveAlert(alertId: string, outcome: OutcomeResult, note
       notes,
       resolvedBy: user.name,
     } as AlertOutcome,
-  });
+    actionLogEntry: buildActionLog(alertId, 'resolved', user, { outcome, notes }),
+  } as any);
 }
 
 export async function assignAlert(alertId: string, assigneeId: string, assigneeName: string): Promise<void> {
   await updateAlert(alertId, {
     ownerId: assigneeId,
     ownerName: assigneeName,
-  });
+    actionLogEntry: buildActionLog(alertId, 'assigned', getCurrentUser(), { assigneeId, assigneeName }),
+  } as any);
 }
 
 export async function reopenAlert(alertId: string): Promise<void> {
@@ -86,7 +90,8 @@ export async function reopenAlert(alertId: string): Promise<void> {
     resolvedAt: undefined,
     resolvedBy: undefined,
     outcome: undefined,
-  });
+    actionLogEntry: buildActionLog(alertId, 'reopened', getCurrentUser()),
+  } as any);
 }
 
 export interface SnoozeDuration { label: string; days: number; }
@@ -133,6 +138,9 @@ export async function addAlertNote(alertId: string, content: string): Promise<vo
     content,
     createdBy: getCurrentUser().name,
   });
+  await updateAlert(alertId, {
+    actionLogEntry: buildActionLog(alertId, 'note_added', getCurrentUser(), { content }),
+  } as any);
 }
 
 // Lightweight stubs for playbooks/teams to keep UI functional.
@@ -194,4 +202,21 @@ export async function completePlaybook(alertId: string) {
       timestamp: new Date().toISOString(),
     },
   } as any);
+}
+
+function buildActionLog(
+  alertId: string,
+  action: AlertActionLog['action'],
+  user: CurrentUser,
+  details?: Record<string, unknown>
+): AlertActionLog {
+  return {
+    id: `log-${Date.now()}`,
+    alertId,
+    action,
+    actor: user.id,
+    actorName: user.name,
+    timestamp: new Date().toISOString(),
+    details,
+  };
 }

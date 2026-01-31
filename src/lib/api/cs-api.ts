@@ -275,12 +275,28 @@ export const queryKeys = {
   alertsByAccount: (accountId: string) => ['cs', 'alerts', { accountId }] as const,
 };
 
+function extractStatus(error: unknown): number | undefined {
+  if (typeof (error as { status?: number })?.status === 'number') {
+    return (error as { status: number }).status;
+  }
+  if (error instanceof Error) {
+    const match = error.message.match(/API Error:\s*(\d+)/);
+    if (match) return Number(match[1]);
+  }
+  return undefined;
+}
+
 /**
  * Default query options for CS API calls.
  */
 export const defaultQueryOptions = {
   staleTime: 2 * 60 * 1000,      // 2 minutes
   gcTime: 10 * 60 * 1000,        // 10 minutes (formerly cacheTime)
-  retry: 2,
+  retry: (failureCount: number, error: unknown) => {
+    const status = extractStatus(error);
+    if (status && status >= 400 && status < 500) return false;
+    return failureCount < 3;
+  },
+  retryDelay: (attemptIndex: number) => Math.min(1000 * 2 ** attemptIndex, 30000),
   refetchOnWindowFocus: true,
 };

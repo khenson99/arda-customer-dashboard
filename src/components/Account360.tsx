@@ -2251,6 +2251,20 @@ function AlertCard({ alert, onSendEmail }: {
       </div>
       <h4 className="alert-title">{alert.title}</h4>
       <p className="alert-description">{alert.description}</p>
+      {typeof alert.playbookProgress === 'number' && (
+        <div className="alert-playbook-progress">
+          <span className="playbook-label">📋 Playbook</span>
+          <div className="playbook-progress-bar">
+            <div 
+              className="playbook-progress-fill"
+              style={{ width: `${Math.min(100, Math.max(0, alert.playbookProgress))}%` }}
+            />
+          </div>
+          <span className="playbook-progress-text">
+            {alert.playbookProgress}% {alert.playbookId ? 'in progress' : 'recommended'}
+          </span>
+        </div>
+      )}
       <div className="alert-action">
         <span className="action-label">Suggested:</span>
         <span className="action-text">{alert.suggestedAction}</span>

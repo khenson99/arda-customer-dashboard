@@ -40,6 +40,8 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           // Data fetching layer
           query: ['@tanstack/react-query'],
+          // Supabase client
+          supabase: ['@supabase/supabase-js'],
           // Charts (largest dependency)
           charts: ['recharts'],
         },

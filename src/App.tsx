@@ -1,11 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchCustomerMetrics } from './lib/arda-client';
 import { TabNavigation } from './components/TabNavigation';
 import { MetricsGrid } from './components/MetricsGrid';
 import { AlertSection } from './components/AlertSection';
-import { CustomerTable } from './components/CustomerTable';
-import { ChartsSection } from './components/ChartsSection';
+
+const CustomerTable = lazy(() =>
+  import('./components/CustomerTable').then((m) => ({ default: m.CustomerTable }))
+);
+const ChartsSection = lazy(() =>
+  import('./components/ChartsSection').then((m) => ({ default: m.ChartsSection }))
+);
 
 function App() {
   // Filter state
@@ -139,10 +144,14 @@ function App() {
         <AlertSection customersWithAlerts={customersWithAlerts} />
 
         {/* Customer Table */}
-        <CustomerTable customers={filteredMetrics} />
+        <Suspense fallback={<div className="loading-state"><div className="loading-spinner" /><p>Loading table...</p></div>}>
+          <CustomerTable customers={filteredMetrics} />
+        </Suspense>
 
         {/* Charts */}
-        <ChartsSection metrics={metrics} />
+        <Suspense fallback={<div className="loading-state"><div className="loading-spinner" /><p>Loading charts...</p></div>}>
+          <ChartsSection metrics={metrics} />
+        </Suspense>
       </div>
     </div>
   );

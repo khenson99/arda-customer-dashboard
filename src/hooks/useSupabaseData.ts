@@ -37,6 +37,33 @@ interface DataState<T> {
   isFromCache: boolean;
 }
 
+type CacheEnvelope<T> = {
+  data: T;
+  savedAt: number;
+};
+
+const LOCAL_CACHE_DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const INTERACTIONS_CACHE_TTL_MS = LOCAL_CACHE_DEFAULT_TTL_MS;
+const TASKS_CACHE_TTL_MS = LOCAL_CACHE_DEFAULT_TTL_MS;
+const SUCCESS_PLAN_CACHE_TTL_MS = 10 * 60 * 1000;
+const EMAILS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function isCacheEnvelope<T>(value: unknown): value is CacheEnvelope<T> {
+  if (!value || typeof value !== 'object') return false;
+  return 'data' in value && 'savedAt' in value;
+}
+
+function unwrapCache<T>(value: unknown, ttlMs: number): { data: T | null; isStale: boolean } {
+  if (isCacheEnvelope<T>(value)) {
+    const savedAt = Number(value.savedAt);
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > ttlMs) {
+      return { data: null, isStale: true };
+    }
+    return { data: value.data, isStale: false };
+  }
+  return { data: (value as T) ?? null, isStale: false };
+}
+
 // ============================================================================
 // useInteractions Hook
 // ============================================================================
@@ -66,8 +93,18 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
     try {
       const data = localStorage.getItem(INTERACTIONS_STORAGE_KEY);
       if (!data) return [];
-      const allInteractions: Record<string, Interaction[]> = JSON.parse(data);
-      return allInteractions[accountId || ''] || [];
+      const allInteractions: Record<string, unknown> = JSON.parse(data);
+      const entry = allInteractions[accountId || ''];
+      const { data: interactions, isStale } = unwrapCache<Interaction[]>(
+        entry,
+        INTERACTIONS_CACHE_TTL_MS
+      );
+      if (isStale) {
+        delete allInteractions[accountId || ''];
+        localStorage.setItem(INTERACTIONS_STORAGE_KEY, JSON.stringify(allInteractions));
+        return [];
+      }
+      return interactions || [];
     } catch {
       return [];
     }
@@ -77,8 +114,11 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
   const saveToLocalStorage = useCallback((interactions: Interaction[]) => {
     try {
       const data = localStorage.getItem(INTERACTIONS_STORAGE_KEY);
-      const allInteractions: Record<string, Interaction[]> = data ? JSON.parse(data) : {};
-      allInteractions[accountId || ''] = interactions;
+      const allInteractions: Record<string, unknown> = data ? JSON.parse(data) : {};
+      allInteractions[accountId || ''] = {
+        data: interactions,
+        savedAt: Date.now(),
+      } satisfies CacheEnvelope<Interaction[]>;
       localStorage.setItem(INTERACTIONS_STORAGE_KEY, JSON.stringify(allInteractions));
     } catch (error) {
       console.error('Failed to save interactions to localStorage:', error);
@@ -226,7 +266,17 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
   const loadFromLocalStorage = useCallback((): StoredTask[] => {
     try {
       const data = localStorage.getItem(storageKey);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      const { data: tasks, isStale } = unwrapCache<StoredTask[]>(
+        parsed,
+        TASKS_CACHE_TTL_MS
+      );
+      if (isStale) {
+        localStorage.removeItem(storageKey);
+        return [];
+      }
+      return tasks || [];
     } catch {
       return [];
     }
@@ -235,7 +285,11 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
   // Save to localStorage
   const saveToLocalStorage = useCallback((tasks: StoredTask[]) => {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(tasks));
+      const envelope: CacheEnvelope<StoredTask[]> = {
+        data: tasks,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(storageKey, JSON.stringify(envelope));
     } catch (error) {
       console.error('Failed to save tasks to localStorage:', error);
     }
@@ -493,7 +547,17 @@ export function useSuccessPlan(accountId: string | undefined): UseSuccessPlanRes
   const loadFromLocalStorage = useCallback((): SuccessPlan | null => {
     try {
       const data = localStorage.getItem(storageKey);
-      return data ? JSON.parse(data) : null;
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      const { data: plan, isStale } = unwrapCache<SuccessPlan | null>(
+        parsed,
+        SUCCESS_PLAN_CACHE_TTL_MS
+      );
+      if (isStale) {
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      return plan || null;
     } catch {
       return null;
     }
@@ -503,7 +567,11 @@ export function useSuccessPlan(accountId: string | undefined): UseSuccessPlanRes
   const saveToLocalStorage = useCallback((plan: SuccessPlan | null) => {
     try {
       if (plan) {
-        localStorage.setItem(storageKey, JSON.stringify(plan));
+        const envelope: CacheEnvelope<SuccessPlan> = {
+          data: plan,
+          savedAt: Date.now(),
+        };
+        localStorage.setItem(storageKey, JSON.stringify(envelope));
       } else {
         localStorage.removeItem(storageKey);
       }
@@ -787,7 +855,17 @@ export function useEmails(accountId: string | undefined): UseEmailsResult {
   const loadSentFromLocalStorage = useCallback((): SentEmail[] => {
     try {
       const data = localStorage.getItem(sentStorageKey);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      const { data: sentEmails, isStale } = unwrapCache<SentEmail[]>(
+        parsed,
+        EMAILS_CACHE_TTL_MS
+      );
+      if (isStale) {
+        localStorage.removeItem(sentStorageKey);
+        return [];
+      }
+      return sentEmails || [];
     } catch {
       return [];
     }
@@ -796,7 +874,17 @@ export function useEmails(accountId: string | undefined): UseEmailsResult {
   const loadDraftsFromLocalStorage = useCallback((): DraftEmail[] => {
     try {
       const data = localStorage.getItem(draftStorageKey);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      const { data: drafts, isStale } = unwrapCache<DraftEmail[]>(
+        parsed,
+        EMAILS_CACHE_TTL_MS
+      );
+      if (isStale) {
+        localStorage.removeItem(draftStorageKey);
+        return [];
+      }
+      return drafts || [];
     } catch {
       return [];
     }
@@ -805,7 +893,11 @@ export function useEmails(accountId: string | undefined): UseEmailsResult {
   // Save to localStorage
   const saveSentToLocalStorage = useCallback((emails: SentEmail[]) => {
     try {
-      localStorage.setItem(sentStorageKey, JSON.stringify(emails));
+      const envelope: CacheEnvelope<SentEmail[]> = {
+        data: emails,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(sentStorageKey, JSON.stringify(envelope));
     } catch (error) {
       console.error('Failed to save sent emails to localStorage:', error);
     }
@@ -813,7 +905,11 @@ export function useEmails(accountId: string | undefined): UseEmailsResult {
 
   const saveDraftsToLocalStorage = useCallback((drafts: DraftEmail[]) => {
     try {
-      localStorage.setItem(draftStorageKey, JSON.stringify(drafts));
+      const envelope: CacheEnvelope<DraftEmail[]> = {
+        data: drafts,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(draftStorageKey, JSON.stringify(envelope));
     } catch (error) {
       console.error('Failed to save drafts to localStorage:', error);
     }
