@@ -67,6 +67,7 @@ export interface HubSpotDeal {
     hubspot_owner_id?: string;
     hs_lastmodifieddate?: string;
     dealtype?: string;
+    hs_probability?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -77,6 +78,20 @@ export interface HubSpotOwner {
   email: string;
   firstName: string;
   lastName: string;
+}
+
+export interface HubSpotSubscription {
+  id: string;
+  properties: Record<string, string | undefined>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HubSpotPayment {
+  id: string;
+  properties: Record<string, string | undefined>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HubSpotSearchResponse<T> {
@@ -115,10 +130,15 @@ export interface HubSpotEnrichedData {
     ownerId?: string;
     ownerName?: string;
     ownerEmail?: string;
+    createdAt?: string;
+    updatedAt?: string;
   };
   contacts: HubSpotContactEnriched[];
   deals: HubSpotDealEnriched[];
   openDeals: HubSpotDealEnriched[];
+  subscriptions: HubSpotSubscriptionEnriched[];
+  payments: HubSpotPaymentEnriched[];
+  billing?: HubSpotBillingSummary;
 }
 
 export interface HubSpotContactEnriched {
@@ -131,9 +151,13 @@ export interface HubSpotContactEnriched {
   jobTitle?: string;
   company?: string;
   lifecycleStage?: string;
+  leadStatus?: string;
+  lastActivityDate?: string;
   ownerId?: string;
   ownerName?: string;
   ownerEmail?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HubSpotDealEnriched {
@@ -144,9 +168,59 @@ export interface HubSpotDealEnriched {
   pipeline?: string;
   closeDate?: string;
   type?: string;
+  probability?: number;
   ownerId?: string;
   ownerName?: string;
   isOpen: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HubSpotSubscriptionEnriched {
+  id: string;
+  planName?: string;
+  status?: string;
+  billingFrequency?: string;
+  nextBillingDate?: string;
+  lastBillingDate?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+  recurringRevenue?: number;
+  mrr?: number;
+  arr?: number;
+  currency?: string;
+  termMonths?: number;
+  autoRenew?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HubSpotPaymentEnriched {
+  id: string;
+  status?: string;
+  amount?: number;
+  currency?: string;
+  initiatedAt?: string;
+  paidAt?: string;
+  dueDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HubSpotBillingSummary {
+  plan?: string;
+  arr?: number;
+  mrr?: number;
+  currency?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+  renewalDate?: string;
+  daysToRenewal?: number;
+  termMonths?: number;
+  autoRenew?: boolean;
+  paymentStatus?: 'current' | 'overdue' | 'at_risk' | 'churned' | 'unknown';
+  lastPaymentDate?: string;
+  overdueAmount?: number;
 }
 
 // ============================================================================
@@ -165,6 +239,44 @@ export function getHubSpotAccessToken(): string {
  */
 export function isHubSpotConfigured(): boolean {
   return getHubSpotAccessToken().length > 0;
+}
+
+let portalIdCache: string | null = null;
+
+export async function getHubSpotPortalId(accessToken?: string): Promise<string | null> {
+  const token = accessToken || getHubSpotAccessToken();
+  if (!token) return null;
+
+  if (portalIdCache) {
+    return portalIdCache;
+  }
+
+  try {
+    const details = await hubspotGet<{ portalId?: number }>(
+      '/account-info/v3/details',
+      token
+    );
+    if (details?.portalId) {
+      portalIdCache = String(details.portalId);
+      return portalIdCache;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch HubSpot portal ID:', error);
+  }
+
+  return null;
+}
+
+export function buildHubSpotUrl(
+  objectType: 'company' | 'contact' | 'deal',
+  objectId: string,
+  portalId?: string | null
+): string {
+  if (!portalId) {
+    return 'https://app.hubspot.com/contacts';
+  }
+
+  return `https://app.hubspot.com/contacts/${portalId}/${objectType}/${objectId}`;
 }
 
 /**
@@ -521,6 +633,7 @@ export async function getDealsForCompany(
             'hubspot_owner_id',
             'hs_lastmodifieddate',
             'dealtype',
+            'hs_probability',
           ],
           inputs: batchIds.map(id => ({ id })),
         }
@@ -532,6 +645,168 @@ export async function getDealsForCompany(
     return deals;
   } catch (error) {
     console.error('Failed to fetch HubSpot deals for company:', error);
+    return [];
+  }
+}
+
+// ============================================================================
+// Subscription & Payment Functions
+// ============================================================================
+
+const SUBSCRIPTION_PROPERTIES = [
+  'hs_name',
+  'hs_status',
+  'hs_subscription_status',
+  'hs_billing_frequency',
+  'hs_billing_period',
+  'hs_next_billing_date',
+  'hs_last_billing_date',
+  'hs_start_date',
+  'hs_end_date',
+  'hs_term_length',
+  'hs_recurring_revenue',
+  'hs_mrr',
+  'hs_arr',
+  'hs_recurring_amount',
+  'hs_currency',
+  'hs_currency_code',
+  'hs_auto_renew',
+];
+
+const PAYMENT_PROPERTIES = [
+  'hs_status',
+  'hs_payment_status',
+  'hs_initial_amount',
+  'hs_amount',
+  'hs_currency',
+  'hs_currency_code',
+  'hs_initiated_date',
+  'hs_payment_date',
+  'hs_due_date',
+  'hs_paid_date',
+];
+
+function getPropertyValue(
+  properties: Record<string, string | undefined>,
+  keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = properties[key];
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function parseHubSpotNumber(value?: string): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseHubSpotDate(value?: string): string | undefined {
+  if (!value) return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return new Date(numeric).toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+function normalizeStatus(value?: string): string | undefined {
+  return value ? value.toLowerCase() : undefined;
+}
+
+export async function getSubscriptionsForCompany(
+  companyId: string,
+  accessToken?: string
+): Promise<HubSpotSubscription[]> {
+  const token = accessToken || getHubSpotAccessToken();
+
+  if (!token) {
+    console.warn('HubSpot access token not configured');
+    return [];
+  }
+
+  try {
+    const associations = await hubspotGet<HubSpotAssociationsResponse>(
+      `/crm/v3/objects/companies/${companyId}/associations/subscriptions`,
+      token
+    );
+
+    if (associations.results.length === 0) {
+      return [];
+    }
+
+    const subscriptionIds = associations.results.map(r => r.id);
+    const subscriptions: HubSpotSubscription[] = [];
+
+    for (let i = 0; i < subscriptionIds.length; i += 10) {
+      const batchIds = subscriptionIds.slice(i, i + 10);
+
+      const batchResult = await hubspotPost<{ results: HubSpotSubscription[] }>(
+        '/crm/v3/objects/subscriptions/batch/read',
+        token,
+        {
+          properties: SUBSCRIPTION_PROPERTIES,
+          inputs: batchIds.map(id => ({ id })),
+        }
+      );
+
+      subscriptions.push(...batchResult.results);
+    }
+
+    return subscriptions;
+  } catch (error) {
+    console.error('Failed to fetch HubSpot subscriptions for company:', error);
+    return [];
+  }
+}
+
+export async function getPaymentsForCompany(
+  companyId: string,
+  accessToken?: string
+): Promise<HubSpotPayment[]> {
+  const token = accessToken || getHubSpotAccessToken();
+
+  if (!token) {
+    console.warn('HubSpot access token not configured');
+    return [];
+  }
+
+  try {
+    const associations = await hubspotGet<HubSpotAssociationsResponse>(
+      `/crm/v3/objects/companies/${companyId}/associations/commerce_payments`,
+      token
+    );
+
+    if (associations.results.length === 0) {
+      return [];
+    }
+
+    const paymentIds = associations.results.map(r => r.id);
+    const payments: HubSpotPayment[] = [];
+
+    for (let i = 0; i < paymentIds.length; i += 10) {
+      const batchIds = paymentIds.slice(i, i + 10);
+
+      const batchResult = await hubspotPost<{ results: HubSpotPayment[] }>(
+        '/crm/v3/objects/commerce_payments/batch/read',
+        token,
+        {
+          properties: PAYMENT_PROPERTIES,
+          inputs: batchIds.map(id => ({ id })),
+        }
+      );
+
+      payments.push(...batchResult.results);
+    }
+
+    return payments;
+  } catch (error) {
+    console.error('Failed to fetch HubSpot payments for company:', error);
     return [];
   }
 }
@@ -703,9 +978,13 @@ function transformContact(
     jobTitle: contact.properties.jobtitle,
     company: contact.properties.company,
     lifecycleStage: contact.properties.lifecyclestage,
+    leadStatus: contact.properties.hs_lead_status,
+    lastActivityDate: parseHubSpotDate(contact.properties.lastmodifieddate || contact.properties.createdate),
     ownerId: contact.properties.hubspot_owner_id,
     ownerName: owner ? `${owner.firstName} ${owner.lastName}` : undefined,
     ownerEmail: owner?.email,
+    createdAt: contact.createdAt,
+    updatedAt: contact.updatedAt,
   };
 }
 
@@ -722,6 +1001,7 @@ function transformDeal(
   const isOpen = !stage.includes('closed') && 
                  !stage.includes('won') && 
                  !stage.includes('lost');
+  const probability = parseHubSpotNumber((deal.properties as Record<string, string | undefined>)['hs_probability']);
 
   return {
     id: deal.id,
@@ -731,9 +1011,147 @@ function transformDeal(
     pipeline: deal.properties.pipeline,
     closeDate: deal.properties.closedate,
     type: deal.properties.dealtype,
+    probability,
     ownerId: deal.properties.hubspot_owner_id,
     ownerName: owner ? `${owner.firstName} ${owner.lastName}` : undefined,
     isOpen,
+    createdAt: deal.createdAt,
+    updatedAt: deal.updatedAt,
+  };
+}
+
+function transformSubscription(
+  subscription: HubSpotSubscription
+): HubSpotSubscriptionEnriched {
+  const props = subscription.properties || {};
+  const planName = getPropertyValue(props, ['hs_name', 'name']);
+  const status = normalizeStatus(
+    getPropertyValue(props, ['hs_status', 'hs_subscription_status', 'status'])
+  );
+  const billingFrequency = getPropertyValue(props, ['hs_billing_frequency', 'hs_billing_period']);
+  const nextBillingDate = parseHubSpotDate(getPropertyValue(props, ['hs_next_billing_date']));
+  const lastBillingDate = parseHubSpotDate(getPropertyValue(props, ['hs_last_billing_date']));
+  const contractStartDate = parseHubSpotDate(getPropertyValue(props, ['hs_start_date']));
+  const contractEndDate = parseHubSpotDate(getPropertyValue(props, ['hs_end_date']));
+  const termMonths = parseHubSpotNumber(getPropertyValue(props, ['hs_term_length']));
+  const autoRenewValue = getPropertyValue(props, ['hs_auto_renew']);
+
+  const recurringRevenue = parseHubSpotNumber(
+    getPropertyValue(props, ['hs_recurring_revenue', 'hs_recurring_amount'])
+  );
+  const mrr = parseHubSpotNumber(getPropertyValue(props, ['hs_mrr'])) ?? recurringRevenue;
+  const arr = parseHubSpotNumber(getPropertyValue(props, ['hs_arr'])) ?? (mrr ? mrr * 12 : undefined);
+
+  const currency = getPropertyValue(props, ['hs_currency', 'hs_currency_code'])?.toUpperCase();
+  const autoRenew = autoRenewValue ? autoRenewValue.toLowerCase() === 'true' : undefined;
+
+  return {
+    id: subscription.id,
+    planName,
+    status: status || undefined,
+    billingFrequency,
+    nextBillingDate,
+    lastBillingDate,
+    contractStartDate,
+    contractEndDate,
+    recurringRevenue,
+    mrr,
+    arr,
+    currency,
+    termMonths,
+    autoRenew,
+    createdAt: subscription.createdAt,
+    updatedAt: subscription.updatedAt,
+  };
+}
+
+function transformPayment(
+  payment: HubSpotPayment
+): HubSpotPaymentEnriched {
+  const props = payment.properties || {};
+  const status = normalizeStatus(
+    getPropertyValue(props, ['hs_status', 'hs_payment_status', 'status'])
+  );
+  const amount = parseHubSpotNumber(
+    getPropertyValue(props, ['hs_initial_amount', 'hs_amount'])
+  );
+  const currency = getPropertyValue(props, ['hs_currency', 'hs_currency_code'])?.toUpperCase();
+  const initiatedAt = parseHubSpotDate(getPropertyValue(props, ['hs_initiated_date']));
+  const paidAt = parseHubSpotDate(getPropertyValue(props, ['hs_paid_date', 'hs_payment_date']));
+  const dueDate = parseHubSpotDate(getPropertyValue(props, ['hs_due_date']));
+
+  return {
+    id: payment.id,
+    status: status || undefined,
+    amount,
+    currency,
+    initiatedAt,
+    paidAt,
+    dueDate,
+    createdAt: payment.createdAt,
+    updatedAt: payment.updatedAt,
+  };
+}
+
+function buildBillingSummary(
+  subscriptions: HubSpotSubscriptionEnriched[],
+  payments: HubSpotPaymentEnriched[]
+): HubSpotBillingSummary | undefined {
+  if (subscriptions.length === 0 && payments.length === 0) {
+    return undefined;
+  }
+
+  const activeSubscription = subscriptions.find(sub =>
+    sub.status?.includes('active') || sub.status?.includes('trial')
+  ) || subscriptions[0];
+
+  const latestPayment = payments
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.paidAt || a.initiatedAt || a.createdAt).getTime();
+      const bTime = new Date(b.paidAt || b.initiatedAt || b.createdAt).getTime();
+      return bTime - aTime;
+    })[0];
+
+  const overduePayments = payments.filter(payment => {
+    const status = payment.status || '';
+    const dueDate = payment.dueDate ? new Date(payment.dueDate).getTime() : null;
+    const isOverdueDate = dueDate ? dueDate < Date.now() : false;
+    return status.includes('overdue') || status.includes('past_due') || status.includes('failed') || status.includes('unpaid') || isOverdueDate;
+  });
+
+  const overdueAmount = overduePayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+
+  let paymentStatus: HubSpotBillingSummary['paymentStatus'] = 'unknown';
+  if (overdueAmount > 0) {
+    paymentStatus = 'overdue';
+  } else if (activeSubscription?.status?.includes('canceled') || activeSubscription?.status?.includes('cancel')) {
+    paymentStatus = 'churned';
+  } else if (activeSubscription?.status?.includes('past_due') || activeSubscription?.status?.includes('unpaid')) {
+    paymentStatus = 'at_risk';
+  } else if (activeSubscription || latestPayment) {
+    paymentStatus = 'current';
+  }
+
+  const renewalDate = activeSubscription?.nextBillingDate;
+  const daysToRenewal = renewalDate
+    ? Math.ceil((new Date(renewalDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : undefined;
+
+  return {
+    plan: activeSubscription?.planName || activeSubscription?.billingFrequency,
+    arr: activeSubscription?.arr,
+    mrr: activeSubscription?.mrr,
+    currency: activeSubscription?.currency || latestPayment?.currency,
+    contractStartDate: activeSubscription?.contractStartDate,
+    contractEndDate: activeSubscription?.contractEndDate,
+    renewalDate,
+    daysToRenewal,
+    termMonths: activeSubscription?.termMonths,
+    autoRenew: activeSubscription?.autoRenew,
+    paymentStatus,
+    lastPaymentDate: latestPayment?.paidAt || latestPayment?.initiatedAt,
+    overdueAmount: overdueAmount > 0 ? overdueAmount : undefined,
   };
 }
 
@@ -761,6 +1179,8 @@ export async function enrichAccountFromHubSpot(
       contacts: [],
       deals: [],
       openDeals: [],
+      subscriptions: [],
+      payments: [],
     };
   }
 
@@ -770,6 +1190,8 @@ export async function enrichAccountFromHubSpot(
       contacts: [],
       deals: [],
       openDeals: [],
+      subscriptions: [],
+      payments: [],
     };
   }
 
@@ -795,6 +1217,8 @@ export async function enrichAccountFromHubSpot(
           contacts: [],
           deals: [],
           openDeals: [],
+          subscriptions: [],
+          payments: [],
         };
       }
 
@@ -811,14 +1235,18 @@ export async function enrichAccountFromHubSpot(
         contacts: enrichedContacts,
         deals: [],
         openDeals: [],
+        subscriptions: [],
+        payments: [],
       };
     }
 
     // Fetch company owner, contacts, and deals in parallel
-    const [companyOwner, contacts, deals] = await Promise.all([
+    const [companyOwner, contacts, deals, subscriptions, payments] = await Promise.all([
       getOwnerCached(company.properties.hubspot_owner_id, token),
       getContactsForCompany(company.id, token),
       getDealsForCompany(company.id, token),
+      getSubscriptionsForCompany(company.id, token),
+      getPaymentsForCompany(company.id, token),
     ]);
 
     // Transform contacts with owner info
@@ -839,6 +1267,11 @@ export async function enrichAccountFromHubSpot(
 
     // Filter to open deals only
     const openDeals = enrichedDeals.filter(deal => deal.isOpen);
+
+    // Transform subscriptions and payments
+    const enrichedSubscriptions = subscriptions.map(transformSubscription);
+    const enrichedPayments = payments.map(transformPayment);
+    const billing = buildBillingSummary(enrichedSubscriptions, enrichedPayments);
 
     // Build location string
     const locationParts = [
@@ -869,10 +1302,15 @@ export async function enrichAccountFromHubSpot(
           ? `${companyOwner.firstName} ${companyOwner.lastName}` 
           : undefined,
         ownerEmail: companyOwner?.email,
+        createdAt: company.createdAt,
+        updatedAt: company.updatedAt,
       },
       contacts: enrichedContacts,
       deals: enrichedDeals,
       openDeals,
+      subscriptions: enrichedSubscriptions,
+      payments: enrichedPayments,
+      billing,
     };
   } catch (error) {
     console.error('Failed to enrich account from HubSpot:', error);
@@ -881,6 +1319,8 @@ export async function enrichAccountFromHubSpot(
       contacts: [],
       deals: [],
       openDeals: [],
+      subscriptions: [],
+      payments: [],
     };
   }
 }

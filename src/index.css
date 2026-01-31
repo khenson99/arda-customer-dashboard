@@ -3991,6 +3991,11 @@ h3 {
   color: #635bff;
 }
 
+.source-badge.source-hubspot {
+  background: rgba(255, 122, 89, 0.15);
+  color: #ff7a59;
+}
+
 .source-badge.source-account {
   background: rgba(59, 130, 246, 0.15);
   color: var(--info);

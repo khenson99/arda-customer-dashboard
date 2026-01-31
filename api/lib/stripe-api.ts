@@ -104,6 +104,12 @@ export interface StripeListResponse<T> {
   url: string;
 }
 
+export interface StripeCustomerMatchOptions {
+  preferredName?: string;
+  preferredEmail?: string;
+  preferredAccountId?: string;
+}
+
 // ============================================================================
 // Enriched Types for Commercial Metrics
 // ============================================================================
@@ -226,7 +232,8 @@ export async function fetchCustomerById(
  */
 export async function fetchCustomerByDomain(
   domain: string,
-  apiKey: string
+  apiKey: string,
+  options?: StripeCustomerMatchOptions
 ): Promise<StripeCustomer | null> {
   try {
     console.log('[Stripe API] Searching for customers by domain:', domain);
@@ -247,10 +254,10 @@ export async function fetchCustomerByDomain(
       customers: result.data.map(c => ({ id: c.id, email: c.email, name: c.name })),
     });
     
-    // Return the first customer found (could be the primary billing contact)
-    // If multiple, prefer one with an active subscription (would need additional logic)
+    // Return the best match if possible, otherwise fall back to first
     if (result.data.length > 0) {
-      return result.data[0];
+      const best = selectBestCustomerMatch(result.data, domain, options);
+      return best || result.data[0];
     }
     
     return null;
@@ -268,9 +275,10 @@ export async function fetchCustomerByDomain(
       );
       
       const domainLower = domain.toLowerCase();
-      const matchingCustomer = listResult.data.find(c => 
+      const domainMatches = listResult.data.filter(c =>
         c.email?.toLowerCase().endsWith(`@${domainLower}`)
       );
+      const matchingCustomer = selectBestCustomerMatch(domainMatches, domainLower, options);
       
       if (matchingCustomer) {
         console.log('[Stripe API] Found customer via list fallback:', {
@@ -286,6 +294,61 @@ export async function fetchCustomerByDomain(
     
     return null;
   }
+}
+
+function selectBestCustomerMatch(
+  customers: StripeCustomer[],
+  domain: string,
+  options?: StripeCustomerMatchOptions
+): StripeCustomer | null {
+  if (customers.length === 0) {
+    return null;
+  }
+
+  const preferredEmail = options?.preferredEmail?.toLowerCase().trim();
+  const preferredName = options?.preferredName?.toLowerCase().trim();
+  const preferredAccountId = options?.preferredAccountId?.trim();
+  const domainLower = domain.toLowerCase();
+
+  const scoreCustomer = (customer: StripeCustomer): number => {
+    let score = 0;
+
+    if (preferredEmail && customer.email?.toLowerCase() === preferredEmail) {
+      score += 100;
+    }
+
+    if (preferredAccountId && customer.metadata?.accountId === preferredAccountId) {
+      score += 90;
+    }
+
+    if (preferredName && customer.name) {
+      const nameLower = customer.name.toLowerCase();
+      if (nameLower === preferredName) {
+        score += 60;
+      } else if (nameLower.includes(preferredName) || preferredName.includes(nameLower)) {
+        score += 40;
+      }
+    }
+
+    if (customer.email?.toLowerCase().endsWith(`@${domainLower}`)) {
+      score += 10;
+    }
+
+    return score;
+  };
+
+  let best: StripeCustomer | null = null;
+  let bestScore = -1;
+
+  for (const customer of customers) {
+    const score = scoreCustomer(customer);
+    if (score > bestScore) {
+      bestScore = score;
+      best = customer;
+    }
+  }
+
+  return best;
 }
 
 /**

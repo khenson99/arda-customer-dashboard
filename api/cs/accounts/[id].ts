@@ -17,6 +17,7 @@ import type {
   Interaction,
   Stakeholder,
   Task,
+  HubSpotAccountData,
 } from '../../../src/lib/types/account.js';
 import { 
   aggregateByTenant, 
@@ -36,7 +37,9 @@ import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mapp
 import { generateAlerts } from '../../lib/alerts.js';
 import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../lib/stripe-api.js';
 import {
+  buildHubSpotUrl,
   enrichAccountFromHubSpot,
+  getHubSpotPortalId,
   mapContactsToStakeholders,
   mapDealsToOpportunities,
   isHubSpotConfigured,
@@ -220,7 +223,7 @@ export default async function handler(
     
     // Priority: 1) TENANT_NAMES stripeEmail, 2) extracted email from tenant name
     const stripeEmail = tenantNameInfo?.stripeEmail || emailInfo2?.email;
-    const stripeCustomerId = tenantNameInfo?.stripeCustomerId || mapping?.stripeId;
+    const stripeCustomerId = mapping?.stripeId || tenantNameInfo?.stripeCustomerId;
     // Domain for fallback search: from TENANT_NAMES, mapping, or extracted from email
     const stripeDomain = tenantNameInfo?.domain || mapping?.domain || emailInfo2?.domain;
     
@@ -236,7 +239,9 @@ export default async function handler(
     const stripeData = await fetchStripeDataForAccount(
       stripeEmail,
       stripeCustomerId,
-      stripeDomain
+      stripeDomain,
+      mapping?.name || tenantInfo.payload.tenantName,
+      mapping?.accountId || tenantId
     );
     
     // Fetch HubSpot data for stakeholder enrichment
@@ -245,6 +250,9 @@ export default async function handler(
       mapping?.domain || emailInfo2?.domain,
       mapping?.name
     );
+
+    const hubspotPortalId = hubspotData?.found ? await getHubSpotPortalId() : null;
+    const hubspotSummary = buildHubSpotSummary(hubspotData, hubspotPortalId);
     
     // Build commercial metrics with optional Stripe enrichment
     const commercial = buildCommercialMetrics(tenantInfo, mapping, stripeData, hubspotData);
@@ -350,6 +358,7 @@ export default async function handler(
       stakeholders,
       recentInteractions: [], // Would come from persistence layer
       openTasks: [], // Would come from persistence layer
+      hubspot: hubspotSummary,
       timeline,
     };
     
@@ -498,6 +507,7 @@ function buildCommercialMetrics(
     paymentStatus: tenant.payload.subscriptionReference?.state === 'ACTIVE' ? 'current' : 'unknown',
     expansionSignals: [],
     expansionPotential: 'none',
+    source: 'account',
   };
   
   // Add open opportunities from HubSpot if available
@@ -506,9 +516,41 @@ function buildCommercialMetrics(
     openOpportunities = mapDealsToOpportunities(hubspotData.openDeals);
   }
   
+  const hubspotBilling = hubspotData?.billing;
+  const applyHubSpotBilling = (metrics: CommercialMetrics): CommercialMetrics => {
+    if (!hubspotBilling) return metrics;
+
+    const renewalDate = metrics.renewalDate || hubspotBilling.renewalDate;
+    const daysToRenewal = metrics.daysToRenewal ?? hubspotBilling.daysToRenewal ?? (
+      renewalDate ? Math.ceil((new Date(renewalDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : undefined
+    );
+
+    return {
+      ...metrics,
+      plan: metrics.plan && metrics.plan !== 'Unknown'
+        ? metrics.plan
+        : (hubspotBilling.plan || metrics.plan),
+      arr: metrics.arr ?? hubspotBilling.arr,
+      mrr: metrics.mrr ?? hubspotBilling.mrr,
+      currency: metrics.currency && metrics.currency !== 'USD'
+        ? metrics.currency
+        : (hubspotBilling.currency || metrics.currency || 'USD'),
+      contractStartDate: metrics.contractStartDate ?? hubspotBilling.contractStartDate,
+      contractEndDate: metrics.contractEndDate ?? hubspotBilling.contractEndDate,
+      renewalDate,
+      daysToRenewal,
+      termMonths: metrics.termMonths ?? hubspotBilling.termMonths,
+      autoRenew: metrics.autoRenew ?? hubspotBilling.autoRenew,
+      paymentStatus: metrics.paymentStatus !== 'unknown' ? metrics.paymentStatus : (hubspotBilling.paymentStatus || metrics.paymentStatus),
+      lastPaymentDate: metrics.lastPaymentDate ?? hubspotBilling.lastPaymentDate,
+      overdueAmount: metrics.overdueAmount ?? hubspotBilling.overdueAmount,
+      source: metrics.source === 'stripe' ? metrics.source : 'hubspot',
+    };
+  };
+
   // Enrich with Stripe data if available
   if (stripeData?.found) {
-    return {
+    const stripeMetrics: CommercialMetrics = {
       ...baseMetrics,
       plan: stripeData.plan || baseMetrics.plan,
       arr: stripeData.arr,
@@ -525,13 +567,16 @@ function buildCommercialMetrics(
       expansionSignals: baseMetrics.expansionSignals,
       expansionPotential: calculateExpansionPotential(stripeData),
       openOpportunities,
+      source: 'stripe',
     };
+
+    return applyHubSpotBilling(stripeMetrics);
   }
-  
-  return {
+
+  return applyHubSpotBilling({
     ...baseMetrics,
     openOpportunities,
-  };
+  });
 }
 
 /**
@@ -573,7 +618,9 @@ function calculateExpansionPotential(
 async function fetchStripeDataForAccount(
   email?: string,
   stripeCustomerId?: string,
-  domain?: string
+  domain?: string,
+  preferredName?: string,
+  preferredAccountId?: string
 ): Promise<StripeEnrichedMetrics | undefined> {
   const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
   
@@ -616,7 +663,11 @@ async function fetchStripeDataForAccount(
       console.log('[Stripe Debug] Trying domain-based search for:', domain);
       
       const { fetchCustomerByDomain } = await import('../../lib/stripe-api.js');
-      const domainCustomer = await fetchCustomerByDomain(domain, stripeKey);
+      const domainCustomer = await fetchCustomerByDomain(domain, stripeKey, {
+        preferredName,
+        preferredEmail: email,
+        preferredAccountId,
+      });
       
       if (domainCustomer) {
         console.log('[Stripe Debug] Found customer via domain search:', {
@@ -799,6 +850,126 @@ function buildStakeholders(
   }
   
   return stakeholders;
+}
+
+function mapEmployeeCountToSize(employeeCount?: number): string | undefined {
+  if (!employeeCount) return undefined;
+  if (employeeCount <= 10) return '1-10';
+  if (employeeCount <= 50) return '11-50';
+  if (employeeCount <= 200) return '51-200';
+  if (employeeCount <= 500) return '201-500';
+  if (employeeCount <= 1000) return '501-1000';
+  if (employeeCount <= 5000) return '1001-5000';
+  if (employeeCount <= 10000) return '5001-10000';
+  return '10001+';
+}
+
+function splitName(fullName?: string): { firstName?: string; lastName?: string } {
+  if (!fullName) return {};
+  const parts = fullName.split(' ');
+  if (parts.length === 1) return { firstName: parts[0] };
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
+function parseLocation(location?: string): { city?: string; state?: string; country?: string } | undefined {
+  if (!location) return undefined;
+  const parts = location.split(',').map(part => part.trim());
+  return {
+    city: parts[0],
+    state: parts[1],
+    country: parts[2],
+  };
+}
+
+function mapHubSpotDealType(type?: string): 'new_business' | 'expansion' | 'renewal' | 'other' {
+  if (!type) return 'other';
+  const normalized = type.toLowerCase();
+  if (normalized.includes('renewal')) return 'renewal';
+  if (normalized.includes('expansion') || normalized.includes('upsell') || normalized.includes('cross')) {
+    return 'expansion';
+  }
+  if (normalized.includes('new')) return 'new_business';
+  return 'other';
+}
+
+function buildHubSpotSummary(
+  hubspotData?: HubSpotEnrichedData,
+  portalId?: string | null
+): HubSpotAccountData | undefined {
+  if (!hubspotData?.found) {
+    return undefined;
+  }
+
+  const fetchedAt = new Date().toISOString();
+
+  const company = hubspotData.company
+    ? {
+        id: hubspotData.company.id,
+        name: hubspotData.company.name || 'Unknown',
+        domain: hubspotData.company.domain,
+        industry: hubspotData.company.industry,
+        companySize: mapEmployeeCountToSize(hubspotData.company.employeeCount),
+        annualRevenue: hubspotData.company.annualRevenue,
+        location: parseLocation(hubspotData.company.location),
+        website: hubspotData.company.domain ? `https://${hubspotData.company.domain}` : undefined,
+        description: undefined,
+        hubspotUrl: buildHubSpotUrl('company', hubspotData.company.id, portalId),
+        createdAt: hubspotData.company.createdAt,
+        updatedAt: hubspotData.company.updatedAt,
+      }
+    : null;
+
+  const contacts = hubspotData.contacts.map(contact => ({
+    id: contact.id,
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    email: contact.email || '',
+    phone: contact.phone,
+    jobTitle: contact.jobTitle,
+    lifecycleStage: contact.lifecycleStage,
+    leadStatus: contact.leadStatus,
+    lastActivityDate: contact.lastActivityDate,
+    hubspotUrl: buildHubSpotUrl('contact', contact.id, portalId),
+    createdAt: contact.createdAt,
+    updatedAt: contact.updatedAt,
+  }));
+
+  const deals = hubspotData.deals.map(deal => ({
+    id: deal.id,
+    name: deal.name || `Deal ${deal.id}`,
+    stage: deal.stage || 'Unknown',
+    pipeline: deal.pipeline,
+    amount: deal.amount,
+    currency: undefined,
+    closeDate: deal.closeDate,
+    probability: deal.probability,
+    dealType: mapHubSpotDealType(deal.type),
+    hubspotUrl: buildHubSpotUrl('deal', deal.id, portalId),
+    createdAt: deal.createdAt,
+    updatedAt: deal.updatedAt,
+  }));
+
+  const owner = hubspotData.company?.ownerName || hubspotData.company?.ownerEmail
+    ? {
+        id: hubspotData.company?.ownerId || 'hubspot-owner',
+        email: hubspotData.company?.ownerEmail || '',
+        ...splitName(hubspotData.company?.ownerName),
+        fullName: hubspotData.company?.ownerName || hubspotData.company?.ownerEmail || 'HubSpot Owner',
+        avatarUrl: undefined,
+        teamId: undefined,
+        userId: undefined,
+      }
+    : null;
+
+  return {
+    company,
+    contacts,
+    deals,
+    owner,
+    source: 'hubspot',
+    fetchedAt,
+    lastSyncedAt: fetchedAt,
+  };
 }
 
 function deriveAccountName(tenantId: string, tenantInfo?: ArdaTenant): string {

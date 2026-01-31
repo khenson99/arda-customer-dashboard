@@ -18,7 +18,7 @@ import {
 import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring.js';
 import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings.js';
 import { generateAlerts } from '../lib/alerts.js';
-import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api.js';
+import { fetchCustomerByDomain, getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api.js';
 import { resolveTenantName, TENANT_NAMES } from '../lib/tenant-names.js';
 
 // Cache for performance (in-memory, reset on cold start)
@@ -110,24 +110,46 @@ export default async function handler(
     const accountMappings = buildAccountMappings(tenantData, codaOverrides);
     
     // Fetch Stripe data if enabled (with rate limiting consideration)
-    const stripeDataMap = new Map<string, StripeEnrichedMetrics>();
+    const stripeDataByAccountId = new Map<string, StripeEnrichedMetrics>();
     
     if (stripeEnabled && stripeKey) {
-      // Build list of accounts with Stripe lookup info
-      // Priority: 1) TENANT_NAMES stripeEmail/stripeCustomerId, 2) extracted email, 3) domain
-      const accountsForStripeLookup = tenantData
-        .map(t => {
-          const tenantNameInfo = TENANT_NAMES[t.tenantId];
-          return {
-            tenantId: t.tenantId,
-            // Use TENANT_NAMES stripeEmail first, then extracted email
-            email: tenantNameInfo?.stripeEmail || t.email,
-            // Use TENANT_NAMES stripeCustomerId if available
-            customerId: tenantNameInfo?.stripeCustomerId,
-            // Use domain for fallback search
-            domain: tenantNameInfo?.domain || (t.email ? t.email.split('@')[1] : undefined),
-          };
-        })
+      // Build list of unique accounts with Stripe lookup info
+      // Priority: 1) Account mapping stripeId, 2) TENANT_NAMES stripeCustomerId,
+      // 3) TENANT_NAMES stripeEmail, 4) extracted email, 5) domain
+      const accountLookup = new Map<string, {
+        accountId: string;
+        name: string;
+        email?: string;
+        customerId?: string;
+        domain?: string;
+      }>();
+
+      for (const tenant of tenantData) {
+        const mapping = accountMappings.get(tenant.tenantId);
+        const accountId = mapping?.accountId || tenant.tenantId;
+        const tenantNameInfo = TENANT_NAMES[tenant.tenantId];
+
+        const existing = accountLookup.get(accountId) || {
+          accountId,
+          name: mapping?.name || tenantNameInfo?.name || tenant.tenantName,
+        };
+
+        if (!existing.customerId) {
+          existing.customerId = mapping?.stripeId || tenantNameInfo?.stripeCustomerId;
+        }
+
+        if (!existing.email) {
+          existing.email = tenantNameInfo?.stripeEmail || tenant.email;
+        }
+
+        if (!existing.domain) {
+          existing.domain = mapping?.domain || tenantNameInfo?.domain || (existing.email ? existing.email.split('@')[1] : undefined);
+        }
+
+        accountLookup.set(accountId, existing);
+      }
+
+      const accountsForStripeLookup = Array.from(accountLookup.values())
         .filter(t => t.email || t.customerId || t.domain)
         .slice(0, 50); // Limit to 50 accounts max to avoid rate limits
       
@@ -150,8 +172,11 @@ export default async function handler(
               
               // If not found and we have a domain, try domain search
               if (!stripeData.found && t.domain) {
-                const { fetchCustomerByDomain } = await import('../lib/stripe-api.js');
-                const domainCustomer = await fetchCustomerByDomain(t.domain, stripeKey);
+                const domainCustomer = await fetchCustomerByDomain(t.domain, stripeKey, {
+                  preferredName: t.name,
+                  preferredEmail: t.email,
+                  preferredAccountId: t.accountId,
+                });
                 
                 if (domainCustomer) {
                   stripeData = await getStripeEnrichedMetrics(
@@ -161,17 +186,17 @@ export default async function handler(
                 }
               }
               
-              return { tenantId: t.tenantId, stripeData };
+              return { accountId: t.accountId, stripeData };
             } catch (error) {
-              console.warn(`Failed to fetch Stripe data for ${t.email || t.domain}:`, error);
-              return { tenantId: t.tenantId, stripeData: null };
+              console.warn(`Failed to fetch Stripe data for ${t.email || t.domain || t.accountId}:`, error);
+              return { accountId: t.accountId, stripeData: null };
             }
           })
         );
         
         for (const result of batchResults) {
           if (result.stripeData?.found) {
-            stripeDataMap.set(result.tenantId, result.stripeData);
+            stripeDataByAccountId.set(result.accountId, result.stripeData);
           }
         }
         
@@ -246,7 +271,8 @@ export default async function handler(
       const activityTrend = buildActivityTrend(activityData.activityTimestamps);
       
       // Get Stripe data if available (for commercial metrics)
-      const stripeData = stripeDataMap.get(tenantId);
+      const accountKey = mapping?.accountId || tenantId;
+      const stripeData = stripeDataByAccountId.get(accountKey);
       
       // Build commercial metrics for alert generation
       const commercial = stripeData?.found ? {
@@ -359,7 +385,7 @@ export default async function handler(
       totalAccounts: accounts.length,
       excludedAccounts: tenantAggregation.size - accounts.length,
       stripeEnriched: stripeEnabled,
-      stripeAccountsEnriched: stripeEnabled ? stripeDataMap.size : 0,
+      stripeAccountsEnriched: stripeEnabled ? stripeDataByAccountId.size : 0,
     });
     
   } catch (error) {

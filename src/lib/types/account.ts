@@ -204,6 +204,7 @@ export interface CommercialMetrics {
   arr?: number;                        // Annual Recurring Revenue
   mrr?: number;                        // Monthly Recurring Revenue
   currency: string;
+  source?: 'stripe' | 'hubspot' | 'account';
   
   // Contract
   contractStartDate?: string;
@@ -248,6 +249,80 @@ export interface Opportunity {
   value: number;
   closeDate?: string;
   probability?: number;
+}
+
+// ============================================================================
+// HUBSPOT CRM DATA
+// ============================================================================
+
+export interface HubSpotCompanySummary {
+  id: string;
+  name: string;
+  domain?: string;
+  industry?: string;
+  companySize?: string;
+  annualRevenue?: number;
+  location?: {
+    city?: string;
+    state?: string;
+    country?: string;
+  };
+  website?: string;
+  description?: string;
+  hubspotUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HubSpotContactSummary {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  phone?: string;
+  jobTitle?: string;
+  lifecycleStage?: string;
+  leadStatus?: string;
+  lastActivityDate?: string;
+  hubspotUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HubSpotDealSummary {
+  id: string;
+  name: string;
+  stage: string;
+  pipeline?: string;
+  amount?: number;
+  currency?: string;
+  closeDate?: string;
+  probability?: number;
+  dealType?: 'new_business' | 'expansion' | 'renewal' | 'other';
+  hubspotUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HubSpotOwnerSummary {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  fullName: string;
+  avatarUrl?: string;
+  teamId?: string;
+  userId?: string;
+}
+
+export interface HubSpotAccountData {
+  company: HubSpotCompanySummary | null;
+  contacts: HubSpotContactSummary[];
+  deals: HubSpotDealSummary[];
+  owner: HubSpotOwnerSummary | null;
+  source: 'hubspot' | 'mock' | 'account';
+  fetchedAt: string;
+  lastSyncedAt?: string;
 }
 
 // ============================================================================
@@ -663,6 +738,7 @@ export interface AccountDetail extends Account {
   recentInteractions: Interaction[];
   openTasks: Task[];
   successPlan?: SuccessPlan;
+  hubspot?: HubSpotAccountData;
   
   // Timeline (unified activity feed)
   timeline: TimelineEvent[];

@@ -60,7 +60,6 @@ import {
   type StripeSubscription,
 } from '../hooks/useCommercialMetrics';
 import {
-  useHubSpotData,
   formatCompanySize,
   formatLifecycleStage,
   getContactFullName,
@@ -133,21 +132,21 @@ export function Account360() {
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [emailModalCategory, setEmailModalCategory] = useState<TemplateCategory | undefined>(undefined);
   
-  const { data: account, isLoading, error } = useAccountDetail(tenantId);
+  const { data: account, isLoading, isFetching, error, refetch } = useAccountDetail(tenantId);
   const { alerts, criticalAlerts, hasCriticalAlerts } = useAccountAlerts(tenantId);
   
-  // Extract domain from primary stakeholder email for HubSpot lookup
-  const primaryContact = account?.stakeholders?.find(s => s.isPrimary);
-  const accountDomain = useMemo(() => {
-    if (primaryContact?.email) {
-      const parts = primaryContact.email.split('@');
-      return parts.length > 1 ? parts[1] : undefined;
-    }
-    return account?.domain;
-  }, [primaryContact?.email, account?.domain]);
-  
-  // Fetch HubSpot CRM data
-  const hubspotData = useHubSpotData(accountDomain);
+  const hubspotData = useMemo(() => {
+    const hubspot = account?.hubspot;
+    return {
+      company: hubspot?.company ?? null,
+      contacts: hubspot?.contacts ?? [],
+      deals: hubspot?.deals ?? [],
+      owner: hubspot?.owner ?? null,
+      syncFromHubSpot: () => refetch(),
+      isLoading: isFetching,
+      lastSyncedAt: hubspot?.lastSyncedAt,
+    };
+  }, [account?.hubspot, refetch, isFetching]);
   
   // Build account data for email templates
   const emailAccountData = useMemo(() => {
@@ -1202,6 +1201,7 @@ function CommercialTab({ account, onOpenEmailModal }: {
           <span className="source-label">Data source:</span>
           <span className={`source-badge source-${data.source}`}>
             {data.source === 'stripe' && '💳 Stripe'}
+            {data.source === 'hubspot' && '🧲 HubSpot'}
             {data.source === 'account' && '📋 Account Data'}
             {data.source === 'mock' && '🧪 Demo Data'}
           </span>

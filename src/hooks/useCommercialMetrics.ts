@@ -51,7 +51,7 @@ export interface CommercialData extends CommercialMetrics {
   daysToCurrentPeriodEnd: number;
   
   // Data source info
-  source: 'stripe' | 'account' | 'mock';
+  source: 'stripe' | 'hubspot' | 'account' | 'mock';
   fetchedAt: string;
 }
 
@@ -239,7 +239,7 @@ function transformToCommercialData(commercial: CommercialMetrics): CommercialDat
     daysToCurrentPeriodEnd: daysToEnd,
     
     // Source info
-    source: commercial.arr || commercial.mrr ? 'stripe' : 'account',
+    source: commercial.source || (commercial.arr || commercial.mrr ? 'stripe' : 'account'),
     fetchedAt: now.toISOString(),
   };
 }
