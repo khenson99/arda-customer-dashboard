@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { fetchCustomerMetrics } from './lib/arda-client';
 import { EditableName } from './components/EditableName';
+import { TabNavigation } from './components/TabNavigation';
 import {
   AreaChart,
   Area,
@@ -31,22 +32,28 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="loading">
-        <div className="loading-spinner" />
-        <p className="loading-text">Loading customer data from Arda API...</p>
+      <div className="dashboard">
+        <TabNavigation />
+        <div className="dashboard-content">
+          <div className="loading-state">
+            <div className="loading-spinner" />
+            <p>Loading customer data from Arda API...</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="error">
-        <div className="error-icon">⚠️</div>
-        <p className="error-message">Failed to load customer data</p>
-        <p className="error-hint">
-          Make sure your Arda API key is set. Add VITE_ARDA_API_KEY to your .env file
-          or set it in localStorage.
-        </p>
+      <div className="dashboard">
+        <TabNavigation />
+        <div className="dashboard-content">
+          <div className="error-message">
+            <div className="error-icon">⚠️</div>
+            <p>Failed to load customer data. Make sure your Arda API key is set.</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -98,12 +105,15 @@ function App() {
 
   return (
     <div className="dashboard">
-      <header className="dashboard-header">
-        <div className="header-top">
-          <div>
-            <h1>Arda Customer Dashboard</h1>
-            <p>Track usage, onboarding progress, and customer health</p>
-          </div>
+      <TabNavigation />
+      
+      <div className="dashboard-content">
+        <header className="dashboard-header">
+          <div className="header-top">
+            <div>
+              <h1>Arda Customer Dashboard</h1>
+              <p>Track usage, onboarding progress, and customer health</p>
+            </div>
           <div className="filter-controls">
             <select 
               value={selectedCSM} 
@@ -380,6 +390,7 @@ function App() {
               />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
         </div>
       </div>
     </div>

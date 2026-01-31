@@ -784,3 +784,228 @@ export async function fetchCustomerDetails(tenantIdOrDomain: string): Promise<Cu
     kanbanCards,
   };
 }
+
+// ============================================
+// Activity Feed & Aggregate APIs
+// ============================================
+
+export interface ActivityEvent {
+  id: string;
+  type: 'item_created' | 'card_created' | 'card_state_change' | 'order_placed';
+  tenantId: string;
+  tenantName: string;
+  timestamp: number;
+  details: {
+    name?: string;
+    previousState?: string;
+    newState?: string;
+    orderNumber?: string;
+    itemSku?: string;
+  };
+}
+
+export interface ActivityAggregate {
+  timeline: Array<{
+    date: string;
+    items: number;
+    cards: number;
+    orders: number;
+  }>;
+  byCustomer: Array<{
+    tenantId: string;
+    tenantName: string;
+    items: number;
+    cards: number;
+    orders: number;
+    total: number;
+    trend: number[];
+  }>;
+}
+
+// Fetch recent activity events for live feed
+export async function fetchActivityEvents(options?: {
+  since?: number;
+  tenantId?: string;
+  limit?: number;
+}): Promise<ActivityEvent[]> {
+  const limit = options?.limit || 100;
+  
+  // Fetch all entities in parallel
+  const [itemsResult, kanbanResult, ordersResult] = await Promise.all([
+    queryItems().catch(() => ({ results: [] })),
+    queryKanbanCards().catch(() => ({ results: [] })),
+    queryOrders().catch(() => ({ results: [] })),
+  ]);
+
+  // Build tenant name map
+  const tenantNames = new Map<string, string>();
+  const tenantsResult = await queryTenants().catch(() => ({ results: [] }));
+  for (const tenant of tenantsResult.results) {
+    const email = tenant.payload.tenantName?.match(/Personal tenant for (.+)/)?.[1];
+    if (email) {
+      const domain = email.split('@')[1]?.toLowerCase();
+      if (domain && !['gmail.com', 'icloud.com', 'outlook.com'].includes(domain)) {
+        tenantNames.set(tenant.rId, domainToCompanyName(domain));
+      } else {
+        tenantNames.set(tenant.rId, email);
+      }
+    } else {
+      tenantNames.set(tenant.rId, tenant.payload.company?.name || `Org ${tenant.rId.slice(0, 8)}`);
+    }
+  }
+
+  const events: ActivityEvent[] = [];
+
+  // Process items
+  for (const item of itemsResult.results) {
+    const tenantId = (item.metadata?.tenant as string) || 'unknown';
+    if (options?.tenantId && tenantId !== options.tenantId) continue;
+    
+    events.push({
+      id: `item-${item.rId}`,
+      type: 'item_created',
+      tenantId,
+      tenantName: tenantNames.get(tenantId) || `Org ${tenantId.slice(0, 8)}`,
+      timestamp: item.createdAt.effective,
+      details: {
+        name: item.payload.name || item.payload.sku || 'Unnamed item',
+        itemSku: item.payload.sku,
+      },
+    });
+  }
+
+  // Process kanban cards
+  for (const card of kanbanResult.results) {
+    const tenantId = (card.metadata?.tenant as string) || 'unknown';
+    if (options?.tenantId && tenantId !== options.tenantId) continue;
+    
+    events.push({
+      id: `card-${card.rId}`,
+      type: 'card_created',
+      tenantId,
+      tenantName: tenantNames.get(tenantId) || `Org ${tenantId.slice(0, 8)}`,
+      timestamp: card.createdAt.effective,
+      details: {
+        name: card.payload.title || card.payload.item?.name || 'Unnamed card',
+        newState: card.payload.state,
+      },
+    });
+  }
+
+  // Process orders
+  for (const order of ordersResult.results) {
+    const tenantId = (order.metadata?.tenant as string) || 'unknown';
+    if (options?.tenantId && tenantId !== options.tenantId) continue;
+    
+    events.push({
+      id: `order-${order.rId}`,
+      type: 'order_placed',
+      tenantId,
+      tenantName: tenantNames.get(tenantId) || `Org ${tenantId.slice(0, 8)}`,
+      timestamp: order.createdAt.effective,
+      details: {
+        orderNumber: order.rId.slice(0, 8),
+        name: `Order #${order.rId.slice(0, 8)}`,
+      },
+    });
+  }
+
+  // Filter by time if specified
+  const since = options?.since || 0;
+  const filtered = events.filter(e => e.timestamp >= since);
+
+  // Sort by timestamp descending (most recent first)
+  filtered.sort((a, b) => b.timestamp - a.timestamp);
+
+  return filtered.slice(0, limit);
+}
+
+// Fetch aggregated activity data for overview charts
+export async function fetchActivityAggregate(options?: {
+  days?: number;
+}): Promise<ActivityAggregate> {
+  const days = options?.days || 30;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+
+  // Fetch all events
+  const events = await fetchActivityEvents({ since: cutoff, limit: 10000 });
+
+  // Build timeline by date
+  const timelineMap = new Map<string, { items: number; cards: number; orders: number }>();
+  const customerMap = new Map<string, {
+    tenantName: string;
+    items: number;
+    cards: number;
+    orders: number;
+    dailyActivity: Map<string, number>;
+  }>();
+
+  // Initialize timeline for all days
+  for (let i = 0; i < days; i++) {
+    const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    const dateStr = date.toISOString().split('T')[0];
+    timelineMap.set(dateStr, { items: 0, cards: 0, orders: 0 });
+  }
+
+  // Process events
+  for (const event of events) {
+    const dateStr = new Date(event.timestamp).toISOString().split('T')[0];
+    
+    // Update timeline
+    const dayData = timelineMap.get(dateStr);
+    if (dayData) {
+      if (event.type === 'item_created') dayData.items++;
+      else if (event.type === 'card_created' || event.type === 'card_state_change') dayData.cards++;
+      else if (event.type === 'order_placed') dayData.orders++;
+    }
+
+    // Update customer data
+    if (!customerMap.has(event.tenantId)) {
+      customerMap.set(event.tenantId, {
+        tenantName: event.tenantName,
+        items: 0,
+        cards: 0,
+        orders: 0,
+        dailyActivity: new Map(),
+      });
+    }
+    const customer = customerMap.get(event.tenantId)!;
+    if (event.type === 'item_created') customer.items++;
+    else if (event.type === 'card_created' || event.type === 'card_state_change') customer.cards++;
+    else if (event.type === 'order_placed') customer.orders++;
+
+    // Track daily activity for sparkline
+    const currentDaily = customer.dailyActivity.get(dateStr) || 0;
+    customer.dailyActivity.set(dateStr, currentDaily + 1);
+  }
+
+  // Convert timeline to array (sorted by date ascending)
+  const timeline = Array.from(timelineMap.entries())
+    .map(([date, data]) => ({ date, ...data }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Convert customer data to array with trends
+  const byCustomer = Array.from(customerMap.entries())
+    .map(([tenantId, data]) => {
+      // Build 7-day trend (last 7 days)
+      const trend: number[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const dateStr = date.toISOString().split('T')[0];
+        trend.push(data.dailyActivity.get(dateStr) || 0);
+      }
+
+      return {
+        tenantId,
+        tenantName: data.tenantName,
+        items: data.items,
+        cards: data.cards,
+        orders: data.orders,
+        total: data.items + data.cards + data.orders,
+        trend,
+      };
+    })
+    .sort((a, b) => b.total - a.total); // Sort by total activity descending
+
+  return { timeline, byCustomer };
+}
