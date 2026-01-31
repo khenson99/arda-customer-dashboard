@@ -2,7 +2,7 @@
 // Base URL: https://prod.alpha001.io.arda.cards
 // Using /api proxy in dev to avoid CORS
 
-import { resolveTenantName, getTenantInfo } from './tenant-names';
+import { resolveTenantName, getTenantInfo, TENANT_NAMES } from './tenant-names';
 import { getCustomerOverrides, type CustomerOverride } from './coda-client';
 const BASE_URL = '/api';
 
@@ -28,7 +28,7 @@ const createHeaders = () => ({
   'Content-Type': 'application/json',
 });
 
-// Generic query function
+// Generic query function (single page)
 async function queryEntity<T>(
   service: string,
   entity: string,
@@ -37,8 +37,6 @@ async function queryEntity<T>(
   const timestamp = Date.now();
   const url = `${BASE_URL}/v1/${service}/${entity}/query?effectiveasof=${timestamp}`;
   
-  // Build query body matching OpenAPI schema
-  // Filter must be a boolean (true = match all) or a complex filter expression
   const queryBody = {
     filter: options.filter ?? true,
     sort: options.sort || { entries: [] },
@@ -56,6 +54,32 @@ async function queryEntity<T>(
   }
 
   return response.json();
+}
+
+// Fetch all pages for a given entity (prevents silent truncation)
+async function queryAllEntities<T>(service: string, entity: string, pageSize = 500): Promise<T[]> {
+  const results: T[] = [];
+  let index = 0;
+
+  while (true) {
+    const page = await queryEntity<T>(service, entity, { paginate: { index, size: pageSize } });
+    results.push(...page.results);
+
+    if (page.nextPage) {
+      const nextPageResponse = await fetch(page.nextPage, { headers: createHeaders(), method: 'POST' });
+      if (!nextPageResponse.ok) break;
+      const nextData = await nextPageResponse.json();
+      results.push(...(nextData.results || []));
+      if (!nextData.results || nextData.results.length < pageSize) break;
+      index += 2; // processed two pages
+    } else if (page.results.length < pageSize) {
+      break;
+    } else {
+      index += 1;
+    }
+  }
+
+  return results;
 }
 
 // Tenant API
@@ -87,7 +111,7 @@ export interface Tenant {
 }
 
 export async function queryTenants() {
-  return queryEntity<Tenant>('tenant', 'tenant', {});
+  return { results: await queryAllEntities<Tenant>('tenant', 'tenant') };
 }
 
 // User Account API
@@ -110,7 +134,7 @@ export interface UserAccount {
 }
 
 export async function queryUserAccounts() {
-  return queryEntity<UserAccount>('user-account', 'user-account', {});
+  return { results: await queryAllEntities<UserAccount>('user-account', 'user-account') };
 }
 
 // Items API
@@ -128,7 +152,7 @@ export interface Item {
 }
 
 export async function queryItems() {
-  return queryEntity<Item>('item', 'item', {});
+  return { results: await queryAllEntities<Item>('item', 'item') };
 }
 
 // Kanban API
@@ -150,7 +174,7 @@ export interface KanbanCard {
 }
 
 export async function queryKanbanCards() {
-  return queryEntity<KanbanCard>('kanban', 'kanban-card', {});
+  return { results: await queryAllEntities<KanbanCard>('kanban', 'kanban-card') };
 }
 
 // Order API
@@ -168,7 +192,7 @@ export interface Order {
 }
 
 export async function queryOrders() {
-  return queryEntity<Order>('order', 'order', {});
+  return { results: await queryAllEntities<Order>('order', 'order') };
 }
 
 // Alert types for predictive health
@@ -341,9 +365,6 @@ export async function fetchCustomerMetrics(): Promise<CustomerMetrics[]> {
       getCustomerOverrides().catch(() => ({} as Record<string, CustomerOverride>)),
     ]);
 
-    console.log('Items API returned:', itemsResult.results.length, 'items');
-    console.log('Kanban API returned:', kanbanResult.results.length, 'cards');
-    console.log('Coda overrides loaded:', Object.keys(codaOverrides).length, 'overrides');
     // Build counts per tenant from Items and Kanban (the source of truth for activity)
     const itemsByTenant = new Map<string, number>();
     const kanbanByTenant = new Map<string, number>();
@@ -415,12 +436,12 @@ export async function fetchCustomerMetrics(): Promise<CustomerMetrics[]> {
       });
     }
 
-    // Collect all unique tenant IDs from Items and Kanban
+    // Collect all unique tenant IDs from Items, Kanban, Orders, and the tenant roster
     const allTenantIds = new Set<string>();
     for (const tenantId of itemsByTenant.keys()) allTenantIds.add(tenantId);
     for (const tenantId of kanbanByTenant.keys()) allTenantIds.add(tenantId);
-
-    console.log('Unique tenant IDs discovered from data:', allTenantIds.size);
+    for (const tenantId of ordersByTenant.keys()) allTenantIds.add(tenantId);
+    for (const tenant of tenantsResult.results) allTenantIds.add(tenant.payload.eId);
 
     // Build metrics for each tenant with activity (no exclusions)
     const metrics: CustomerMetrics[] = [];
@@ -605,8 +626,6 @@ export async function fetchCustomerMetrics(): Promise<CustomerMetrics[]> {
       if (stageCompare !== 0) return stageCompare;
       return (b.itemCount + b.kanbanCardCount) - (a.itemCount + a.kanbanCardCount);
     });
-
-    console.log('Tenants found:', metrics.length, metrics.map(m => `${m.companyName}(${m.itemCount} items)`));
     return metrics;
   } catch (error) {
     console.error('Failed to fetch customer metrics:', error);
@@ -822,6 +841,16 @@ export interface ActivityAggregate {
   }>;
 }
 
+// Local helper to resolve tenant names using manual mappings
+function resolveTenantNameLocal(tenantId: string): string {
+  const info = TENANT_NAMES[tenantId];
+  if (info) return info.name;
+  
+  // Fallback to abbreviated ID
+  if (!tenantId || tenantId === 'unknown') return 'Unknown Org';
+  return `Org ${tenantId.slice(0, 8)}`;
+}
+
 // Fetch recent activity events for live feed
 export async function fetchActivityEvents(options?: {
   since?: number;
@@ -837,7 +866,7 @@ export async function fetchActivityEvents(options?: {
     queryOrders().catch(() => ({ results: [] })),
   ]);
 
-  // Build tenant name map
+  // Build tenant name map (support both rId and eId keys)
   const tenantNames = new Map<string, string>();
   const tenantsResult = await queryTenants().catch(() => ({ results: [] }));
   for (const tenant of tenantsResult.results) {
@@ -845,12 +874,17 @@ export async function fetchActivityEvents(options?: {
     if (email) {
       const domain = email.split('@')[1]?.toLowerCase();
       if (domain && !['gmail.com', 'icloud.com', 'outlook.com'].includes(domain)) {
-        tenantNames.set(tenant.rId, domainToCompanyName(domain));
+        const resolved = domainToCompanyName(domain);
+        tenantNames.set(tenant.rId, resolved);
+        tenantNames.set(tenant.payload.eId, resolved);
       } else {
         tenantNames.set(tenant.rId, email);
+        tenantNames.set(tenant.payload.eId, email);
       }
     } else {
-      tenantNames.set(tenant.rId, tenant.payload.company?.name || `Org ${tenant.rId.slice(0, 8)}`);
+      const fallback = tenant.payload.company?.name || `Org ${tenant.rId.slice(0, 8)}`;
+      tenantNames.set(tenant.rId, fallback);
+      tenantNames.set(tenant.payload.eId, fallback);
     }
   }
 
@@ -858,14 +892,16 @@ export async function fetchActivityEvents(options?: {
 
   // Process items
   for (const item of itemsResult.results) {
-    const tenantId = (item.metadata?.tenant as string) || 'unknown';
+    const tenantId = (item.metadata as Record<string, unknown>)?.tenantId as string
+      || (item.metadata as Record<string, unknown>)?.tenant as string
+      || 'unknown';
     if (options?.tenantId && tenantId !== options.tenantId) continue;
     
     events.push({
       id: `item-${item.rId}`,
       type: 'item_created',
       tenantId,
-      tenantName: tenantNames.get(tenantId) || `Org ${tenantId.slice(0, 8)}`,
+      tenantName: tenantNames.get(tenantId) || resolveTenantNameLocal(tenantId),
       timestamp: item.createdAt.effective,
       details: {
         name: item.payload.name || item.payload.sku || 'Unnamed item',
@@ -876,14 +912,16 @@ export async function fetchActivityEvents(options?: {
 
   // Process kanban cards
   for (const card of kanbanResult.results) {
-    const tenantId = (card.metadata?.tenant as string) || 'unknown';
+    const tenantId = (card.metadata as Record<string, unknown>)?.tenantId as string
+      || (card.metadata as Record<string, unknown>)?.tenant as string
+      || 'unknown';
     if (options?.tenantId && tenantId !== options.tenantId) continue;
     
     events.push({
       id: `card-${card.rId}`,
       type: 'card_created',
       tenantId,
-      tenantName: tenantNames.get(tenantId) || `Org ${tenantId.slice(0, 8)}`,
+      tenantName: tenantNames.get(tenantId) || resolveTenantNameLocal(tenantId),
       timestamp: card.createdAt.effective,
       details: {
         name: card.payload.title || card.payload.item?.name || 'Unnamed card',
@@ -894,14 +932,16 @@ export async function fetchActivityEvents(options?: {
 
   // Process orders
   for (const order of ordersResult.results) {
-    const tenantId = (order.metadata?.tenant as string) || 'unknown';
+    const tenantId = (order.metadata as Record<string, unknown>)?.tenantId as string
+      || (order.metadata as Record<string, unknown>)?.tenant as string
+      || 'unknown';
     if (options?.tenantId && tenantId !== options.tenantId) continue;
     
     events.push({
       id: `order-${order.rId}`,
       type: 'order_placed',
       tenantId,
-      tenantName: tenantNames.get(tenantId) || `Org ${tenantId.slice(0, 8)}`,
+      tenantName: tenantNames.get(tenantId) || resolveTenantNameLocal(tenantId),
       timestamp: order.createdAt.effective,
       details: {
         orderNumber: order.rId.slice(0, 8),

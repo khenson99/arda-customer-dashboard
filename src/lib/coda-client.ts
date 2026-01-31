@@ -39,7 +39,11 @@ export interface CodaInteraction {
 async function codaFetch(endpoint: string, options: RequestInit = {}) {
   const token = getCodaToken();
   if (!token) {
-    console.warn('No Coda API token configured');
+    const message = 'No Coda API token configured';
+    if (import.meta.env.PROD) {
+      throw new Error(message);
+    }
+    console.warn(message);
     return null;
   }
 
@@ -126,6 +130,10 @@ export async function getCustomerOverrides(): Promise<Record<string, CustomerOve
   }
 
   // Fallback to localStorage
+  if (import.meta.env.PROD) {
+    throw new Error('Coda Customer Overrides table is not available in production.');
+  }
+
   try {
     const data = localStorage.getItem(OVERRIDES_STORAGE_KEY);
     return data ? JSON.parse(data) : {};
@@ -159,6 +167,9 @@ export async function saveCustomerOverride(override: CustomerOverride): Promise<
   }
 
   // Fallback to localStorage
+  if (import.meta.env.PROD) {
+    throw new Error('Coda is required for saving customer overrides in production.');
+  }
   try {
     const data = localStorage.getItem(OVERRIDES_STORAGE_KEY);
     const overrides: Record<string, CustomerOverride> = data ? JSON.parse(data) : {};
@@ -230,6 +241,9 @@ export async function saveInteractionToCoda(tenantId: string, interaction: CodaI
   }
 
   // Fallback to localStorage
+  if (import.meta.env.PROD) {
+    throw new Error('Coda is required for saving interactions in production.');
+  }
   try {
     const data = localStorage.getItem(INTERACTIONS_STORAGE_KEY);
     const allInteractions: Record<string, CodaInteraction[]> = data ? JSON.parse(data) : {};

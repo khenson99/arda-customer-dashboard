@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchCustomerMetrics } from './lib/arda-client';
 import { EditableName } from './components/EditableName';
 import { TabNavigation } from './components/TabNavigation';
@@ -24,6 +24,7 @@ function App() {
   const [selectedCSM, setSelectedCSM] = useState<string>('all');
   const [selectedLifecycle, setSelectedLifecycle] = useState<string>('all');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   
   const { data: customers, isLoading, error } = useQuery({
     queryKey: ['customerMetrics'],
@@ -223,7 +224,7 @@ function App() {
                 onClick={(e) => {
                   // Don't navigate if clicking on editable name input
                   if ((e.target as HTMLElement).tagName === 'INPUT') return;
-                  window.location.href = `/customer/${customer.tenantId}`;
+                  navigate(`/customer/${customer.tenantId}`);
                 }}
               >
                 <td>
