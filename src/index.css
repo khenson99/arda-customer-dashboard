@@ -3905,3 +3905,966 @@ h3 {
     align-items: flex-start;
   }
 }
+
+/* ============================================================================
+   HUBSPOT INTEGRATION STYLES
+   ============================================================================ */
+
+/* HubSpot Brand Colors */
+:root {
+  --hubspot-orange: #FF7A59;
+  --hubspot-orange-light: #ff9a7f;
+  --hubspot-orange-dark: #e05a3a;
+}
+
+/* HubSpot Icon */
+.hubspot-icon {
+  flex-shrink: 0;
+}
+
+/* HubSpot Link Styles */
+.hubspot-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 122, 89, 0.1);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.hubspot-link-icon:hover {
+  background: rgba(255, 122, 89, 0.2);
+  transform: translateY(-1px);
+}
+
+.hubspot-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 8px 14px;
+  background: rgba(255, 122, 89, 0.1);
+  border: 1px solid rgba(255, 122, 89, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--hubspot-orange);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.hubspot-link-btn:hover {
+  background: rgba(255, 122, 89, 0.2);
+  border-color: var(--hubspot-orange);
+  transform: translateY(-1px);
+}
+
+.hubspot-link-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hubspot-orange);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.hubspot-link-text:hover {
+  color: var(--hubspot-orange-dark);
+  text-decoration: underline;
+}
+
+/* Sync Button */
+.hubspot-sync-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.hubspot-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  white-space: nowrap;
+}
+
+.hubspot-sync-btn .sync-icon.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+.last-synced {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Industry & Size Badges */
+.industry-badge,
+.size-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(255, 122, 89, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--hubspot-orange);
+}
+
+/* CRM Section in Overview Tab */
+.crm-section {
+  padding: var(--spacing-lg);
+}
+
+.crm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.crm-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.crm-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.crm-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+}
+
+.crm-company-info {
+  grid-column: 1 / -1;
+}
+
+.crm-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.crm-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.crm-info-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.crm-info-value {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.crm-owner-info {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
+.crm-owner-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.crm-owner-details {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.crm-owner-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--hubspot-orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  overflow: hidden;
+}
+
+.crm-owner-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.crm-owner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crm-owner-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.crm-owner-email {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* CRM Deals Section */
+.crm-deals-section {
+  grid-column: 1 / -1;
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--glass-border);
+}
+
+.crm-deals-section h4 {
+  margin-bottom: var(--spacing-md);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.crm-deals-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.crm-deal-item {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--info);
+}
+
+.crm-deal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.crm-deal-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.crm-deal-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  font-size: 0.85rem;
+}
+
+.crm-deal-stage {
+  padding: 2px 8px;
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: var(--radius-sm);
+  color: var(--info);
+  font-weight: 500;
+}
+
+.crm-deal-amount {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.crm-deal-close {
+  color: var(--text-muted);
+}
+
+/* HubSpot Owner Card in Stakeholders Tab */
+.hubspot-owner-card {
+  padding: var(--spacing-lg);
+  border-left: 4px solid var(--hubspot-orange);
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(255, 122, 89, 0.03) 100%);
+}
+
+.hubspot-owner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.hubspot-owner-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.hubspot-owner-content {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.hubspot-owner-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--hubspot-orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 1.25rem;
+  overflow: hidden;
+}
+
+.hubspot-owner-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hubspot-owner-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hubspot-owner-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.hubspot-owner-email {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Stakeholders Header with Sync */
+.stakeholders-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.stakeholders-header h3 {
+  margin: 0;
+}
+
+/* Enhanced Stakeholder Card with HubSpot */
+.stakeholder-card.has-hubspot {
+  border-left: 3px solid var(--hubspot-orange);
+}
+
+.stakeholder-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.stakeholder-title {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--hubspot-orange);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.stakeholder-phone {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.hubspot-lifecycle-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(255, 122, 89, 0.15);
+  color: var(--hubspot-orange);
+}
+
+.hubspot-lifecycle-badge.stage-customer {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.hubspot-lifecycle-badge.stage-lead,
+.hubspot-lifecycle-badge.stage-subscriber {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--info);
+}
+
+.hubspot-lifecycle-badge.stage-opportunity {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.stakeholder-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.stakeholder-last-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.stakeholder-last-activity.hubspot-activity {
+  background: rgba(255, 122, 89, 0.1);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.activity-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.activity-time {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* HubSpot Contacts Section */
+.hubspot-contacts-section {
+  padding: var(--spacing-lg);
+}
+
+.hubspot-contacts-section h3 {
+  margin-bottom: var(--spacing-xs);
+}
+
+.section-description {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.hubspot-contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.hubspot-contact-item {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  transition: background 0.2s ease;
+}
+
+.hubspot-contact-item:hover {
+  background: var(--bg-card-hover);
+}
+
+.hubspot-contact-item.linked {
+  opacity: 0.7;
+}
+
+.hubspot-contact-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 122, 89, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hubspot-orange);
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.hubspot-contact-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hubspot-contact-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 2px;
+}
+
+.hubspot-contact-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.linked-badge {
+  font-size: 0.7rem;
+  color: var(--success);
+  padding: 2px 6px;
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.hubspot-contact-title {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--hubspot-orange);
+  margin-bottom: 2px;
+}
+
+.hubspot-contact-meta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.hubspot-contact-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  align-items: center;
+}
+
+.hubspot-last-activity {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* HubSpot Card Component Styles */
+.hubspot-card {
+  overflow: hidden;
+}
+
+.hubspot-card-empty {
+  padding: var(--spacing-lg);
+}
+
+.hubspot-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.hubspot-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.hubspot-card-title h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.hubspot-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.hubspot-empty-content {
+  padding: var(--spacing-lg);
+  text-align: center;
+}
+
+.hubspot-empty-content p {
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.hubspot-company-summary {
+  border: none;
+  box-shadow: none;
+}
+
+.hubspot-company-content {
+  padding: var(--spacing-lg);
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--spacing-lg);
+}
+
+.company-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.info-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.hubspot-owner-section {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
+.owner-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.owner-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.owner-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--hubspot-orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.owner-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.owner-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.owner-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.owner-email {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* HubSpot Section in Card */
+.hubspot-section {
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--glass-border);
+}
+
+.hubspot-section h4 {
+  margin-bottom: var(--spacing-md);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+/* Contact List Styles */
+.contact-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 122, 89, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hubspot-orange);
+  font-weight: 600;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.contact-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.contact-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.contact-title {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--hubspot-orange);
+  margin-top: 2px;
+}
+
+.contact-meta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.contact-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  align-items: center;
+}
+
+.lifecycle-stage-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(255, 122, 89, 0.15);
+  color: var(--hubspot-orange);
+}
+
+.lifecycle-stage-badge.stage-customer {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.last-activity {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.view-more-contacts {
+  padding: var(--spacing-sm);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--glass-border);
+  margin-top: var(--spacing-sm);
+}
+
+/* Deal Pipeline Styles */
+.hubspot-deal-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.pipeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pipeline-summary {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.85rem;
+}
+
+.pipeline-count {
+  color: var(--text-secondary);
+}
+
+.pipeline-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pipeline-deals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.deal-item {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--info);
+}
+
+.deal-item.stage-success {
+  border-left-color: var(--success);
+}
+
+.deal-item.stage-warning {
+  border-left-color: var(--warning);
+}
+
+.deal-item.stage-muted {
+  border-left-color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.deal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.deal-type-icon {
+  font-size: 1rem;
+}
+
+.deal-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.deal-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.deal-amount {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.deal-meta {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.deal-stage {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.stage-badge-success {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.stage-badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.stage-badge-info {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--info);
+}
+
+.stage-badge-muted {
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.deal-probability {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.deal-close-date {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Responsive Adjustments for HubSpot */
+@media (max-width: 1024px) {
+  .crm-content {
+    grid-template-columns: 1fr;
+  }
+  
+  .hubspot-company-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .crm-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .crm-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  
+  .hubspot-owner-card .hubspot-owner-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+  }
+  
+  .stakeholder-card {
+    flex-wrap: wrap;
+  }
+  
+  .stakeholder-activity {
+    width: 100%;
+    align-items: flex-start;
+    margin-left: 0;
+    margin-top: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--glass-border);
+  }
+  
+  .company-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
