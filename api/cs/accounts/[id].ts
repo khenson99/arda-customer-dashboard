@@ -82,6 +82,12 @@ export default async function handler(
   }
   
   try {
+    const timelineLimitParam = req.query.timelineLimit;
+    const includeTimeline = req.query.includeTimeline !== 'false';
+    const timelineLimitRaw = typeof timelineLimitParam === 'string' ? Number(timelineLimitParam) : NaN;
+    const timelineLimit = Number.isFinite(timelineLimitRaw)
+      ? Math.min(Math.max(Math.floor(timelineLimitRaw), 1), 300)
+      : 100;
     // Get API credentials
     const apiKey = req.headers['x-arda-api-key'] as string || process.env.ARDA_API_KEY;
     const author = req.headers['x-arda-author'] as string || process.env.ARDA_AUTHOR || 'dashboard@arda.cards';
@@ -352,7 +358,9 @@ export default async function handler(
       alerts.map(a => ({ type: a.type, severity: a.severity, title: a.title })));
     
     // Build timeline
-    const timeline = buildTimeline(tenantItems, tenantKanbanCards, tenantOrders);
+    const timeline = includeTimeline
+      ? buildTimeline(tenantItems, tenantKanbanCards, tenantOrders, timelineLimit)
+      : [];
     
     // Build stakeholders - enrich with HubSpot contact data if available
     const stakeholders = buildStakeholders(
@@ -807,12 +815,14 @@ function buildSupportMetrics(): SupportMetrics {
 function buildTimeline(
   items: ArdaItem[],
   kanbanCards: ArdaKanbanCard[],
-  orders: ArdaOrder[]
+  orders: ArdaOrder[],
+  limit: number
 ): TimelineEvent[] {
   const events: TimelineEvent[] = [];
+  const perTypeLimit = Math.max(10, Math.ceil(limit / 3));
   
   // Add item events
-  for (const item of items.slice(-50)) { // Last 50 items
+  for (const item of items.slice(-perTypeLimit)) {
     events.push({
       id: `item-${item.rId}`,
       type: 'product_activity',
@@ -825,7 +835,7 @@ function buildTimeline(
   }
   
   // Add kanban events
-  for (const card of kanbanCards.slice(-50)) {
+  for (const card of kanbanCards.slice(-perTypeLimit)) {
     events.push({
       id: `card-${card.rId}`,
       type: 'product_activity',
@@ -838,7 +848,7 @@ function buildTimeline(
   }
   
   // Add order events
-  for (const order of orders.slice(-50)) {
+  for (const order of orders.slice(-perTypeLimit)) {
     events.push({
       id: `order-${order.rId}`,
       type: 'product_activity',
@@ -853,7 +863,7 @@ function buildTimeline(
   // Sort by timestamp descending
   events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   
-  return events.slice(0, 100); // Return last 100 events
+  return events.slice(0, limit);
 }
 
 function buildStakeholders(

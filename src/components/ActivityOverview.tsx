@@ -1,6 +1,7 @@
-import { useState, useMemo, memo } from 'react';
+import { useState, useMemo, memo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { fetchActivityAggregate, type ActivityAggregate } from '../lib/arda-client';
 import {
   AreaChart,
@@ -18,6 +19,7 @@ type TimeRange = 7 | 30 | 90;
 
 export function ActivityOverview() {
   const [days, setDays] = useState<TimeRange>(30);
+  const tableRef = useRef<HTMLDivElement | null>(null);
 
   const { data, isLoading, error } = useQuery<ActivityAggregate>({
     queryKey: ['activityAggregate', days],
@@ -40,6 +42,12 @@ export function ActivityOverview() {
 
   const timelineData = useMemo(() => data?.timeline ?? [], [data?.timeline]);
   const customers = useMemo(() => data?.byCustomer ?? [], [data?.byCustomer]);
+  const rowVirtualizer = useVirtualizer({
+    count: customers.length,
+    getScrollElement: () => tableRef.current,
+    estimateSize: () => 56,
+    overscan: 6,
+  });
 
   return (
     <div className="dashboard">
@@ -142,43 +150,53 @@ export function ActivityOverview() {
             {/* Customer Breakdown Table */}
             <div className="glass-card customer-table-container">
               <h3>Activity by Customer</h3>
-              <table className="customer-table activity-table">
-                <thead>
-                  <tr>
-                    <th>Customer</th>
-                    <th>Trend</th>
-                    <th>Items</th>
-                    <th>Cards</th>
-                    <th>Orders</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {customers.map((customer) => (
-                    <tr key={customer.tenantId} className="customer-row">
-                      <td>
-                        <Link to={`/account/${customer.tenantId}`} className="customer-link">
-                          {customer.tenantName}
-                        </Link>
-                      </td>
-                      <td>
-                        <MiniSparkline data={customer.trend} />
-                      </td>
-                      <td className="metric-cell">{customer.items}</td>
-                      <td className="metric-cell">{customer.cards}</td>
-                      <td className="metric-cell">{customer.orders}</td>
-                      <td className="metric-cell total">{customer.total}</td>
-                    </tr>
-                  ))}
-                  {customers.length === 0 && (
+              <div className="activity-table-virtual" ref={tableRef}>
+                <table className="customer-table activity-table">
+                  <thead>
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No activity in this time period
-                      </td>
+                      <th>Customer</th>
+                      <th>Trend</th>
+                      <th>Items</th>
+                      <th>Cards</th>
+                      <th>Orders</th>
+                      <th>Total</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="activity-table-body" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+                    {customers.length === 0 && (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                          No activity in this time period
+                        </td>
+                      </tr>
+                    )}
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const customer = customers[virtualRow.index];
+                      if (!customer) return null;
+                      return (
+                        <tr
+                          key={customer.tenantId}
+                          className="customer-row activity-virtual-row"
+                          style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        >
+                          <td>
+                            <Link to={`/account/${customer.tenantId}`} className="customer-link">
+                              {customer.tenantName}
+                            </Link>
+                          </td>
+                          <td>
+                            <MiniSparkline data={customer.trend} />
+                          </td>
+                          <td className="metric-cell">{customer.items}</td>
+                          <td className="metric-cell">{customer.cards}</td>
+                          <td className="metric-cell">{customer.orders}</td>
+                          <td className="metric-cell total">{customer.total}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         ) : null}

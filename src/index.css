@@ -1171,6 +1171,26 @@ h3 {
   font-weight: 700;
 }
 
+.activity-table-virtual {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.activity-table-body {
+  display: block;
+  position: relative;
+  width: 100%;
+}
+
+.activity-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: table;
+  table-layout: fixed;
+}
+
 .mini-sparkline {
   width: 70px;
   height: 20px;
