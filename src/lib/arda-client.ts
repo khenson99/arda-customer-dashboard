@@ -4,7 +4,7 @@
 
 import { resolveTenantName, getTenantInfo } from './tenant-names';
 import { getCustomerOverrides, type CustomerOverride } from './coda-client';
-const BASE_URL = import.meta.env.DEV ? '/api' : 'https://prod.alpha001.io.arda.cards';
+const BASE_URL = '/api';
 
 // Get API key from environment or localStorage
 const getApiKey = () => {
