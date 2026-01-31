@@ -11,6 +11,7 @@ export function EditableName({ tenantId, displayName, onSave }: EditableNameProp
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(displayName);
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function EditableName({ tenantId, displayName, onSave }: EditableNameProp
     }
 
     setIsSaving(true);
+    setError(null);
     try {
       await saveCustomerOverride({
         tenantId,
@@ -43,6 +45,7 @@ export function EditableName({ tenantId, displayName, onSave }: EditableNameProp
       setIsEditing(false);
     } catch (error) {
       console.error('Failed to save name:', error);
+      setError(error instanceof Error ? error.message : 'Failed to save name');
     } finally {
       setIsSaving(false);
     }
@@ -63,17 +66,21 @@ export function EditableName({ tenantId, displayName, onSave }: EditableNameProp
 
   if (isEditing) {
     return (
-      <input
-        ref={inputRef}
-        type="text"
-        className="editable-name-input"
-        value={editValue}
-        onChange={(e) => setEditValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={handleBlur}
-        disabled={isSaving}
-        onClick={(e) => e.stopPropagation()}
-      />
+      <div className="editable-name-editing">
+        <input
+          ref={inputRef}
+          type="text"
+          className="editable-name-input"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          disabled={isSaving}
+          onClick={(e) => e.stopPropagation()}
+          aria-invalid={!!error}
+        />
+        {error && <div className="inline-error">{error}</div>}
+      </div>
     );
   }
 
@@ -85,6 +92,7 @@ export function EditableName({ tenantId, displayName, onSave }: EditableNameProp
     >
       {displayName}
       <span className="edit-hint">✏️</span>
+      {error && <span className="inline-error">{error}</span>}
     </span>
   );
 }

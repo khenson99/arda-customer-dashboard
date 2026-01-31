@@ -976,6 +976,17 @@ h3 {
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
 }
 
+.editable-name-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inline-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
 /* ============================================
    Tab Navigation
    ============================================ */

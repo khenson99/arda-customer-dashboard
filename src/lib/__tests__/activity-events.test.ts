@@ -39,7 +39,7 @@ const tenant = {
 };
 
 describe('fetchActivityEvents', () => {
-  const originalFetch = global.fetch;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -59,12 +59,11 @@ describe('fetchActivityEvents', () => {
       return new Response(JSON.stringify({ results: [] }), { status: 200 });
     });
 
-    // @ts-expect-error - assign mock fetch for tests
-    global.fetch = fetchMock;
+    globalThis.fetch = fetchMock;
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
   });
 
   it('uses tenantId from metadata for feed entries', async () => {
