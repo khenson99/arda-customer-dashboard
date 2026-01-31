@@ -382,11 +382,14 @@ export function LiveFeed() {
               </div>
               
               <div className="filter-group date-range-group">
-                <label>Date Range</label>
+                <label id="date-range-label">Date Range</label>
                 <div className="date-inputs">
                   <input
                     type="date"
                     className="filter-input date-input"
+                    title="Start date"
+                    aria-label="Start date"
+                    aria-describedby="date-range-label"
                     value={filters.dateRange.start?.toISOString().split('T')[0] || ''}
                     onChange={e => setFilters(prev => ({
                       ...prev,
@@ -397,6 +400,9 @@ export function LiveFeed() {
                   <input
                     type="date"
                     className="filter-input date-input"
+                    title="End date"
+                    aria-label="End date"
+                    aria-describedby="date-range-label"
                     value={filters.dateRange.end?.toISOString().split('T')[0] || ''}
                     onChange={e => setFilters(prev => ({
                       ...prev,

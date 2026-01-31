@@ -17,7 +17,7 @@ import type {
   Interaction,
   Stakeholder,
   Task,
-} from '../../../src/lib/types/account';
+} from '../../../src/lib/types/account.js';
 import { 
   aggregateByTenant, 
   fetchTenants,
@@ -29,19 +29,19 @@ import {
   type ArdaItem,
   type ArdaKanbanCard,
   type ArdaOrder,
-} from '../../lib/arda-api';
-import { resolveTenantName } from '../../lib/tenant-names';
-import { calculateHealthScore, type HealthScoringInput } from '../../lib/health-scoring';
-import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mappings';
-import { generateAlerts } from '../../lib/alerts';
-import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../lib/stripe-api';
+} from '../../lib/arda-api.js';
+import { resolveTenantName } from '../../lib/tenant-names.js';
+import { calculateHealthScore, type HealthScoringInput } from '../../lib/health-scoring.js';
+import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mappings.js';
+import { generateAlerts } from '../../lib/alerts.js';
+import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../lib/stripe-api.js';
 import {
   enrichAccountFromHubSpot,
   mapContactsToStakeholders,
   mapDealsToOpportunities,
   isHubSpotConfigured,
   type HubSpotEnrichedData,
-} from '../../lib/hubspot-client';
+} from '../../lib/hubspot-client.js';
 
 export default async function handler(
   req: VercelRequest,

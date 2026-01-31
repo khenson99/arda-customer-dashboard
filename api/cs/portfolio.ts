@@ -8,18 +8,18 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import type { AccountSummary, LifecycleStage, OnboardingStatus } from '../../src/lib/types/account';
+import type { AccountSummary, LifecycleStage, OnboardingStatus } from '../../src/lib/types/account.js';
 import { 
   aggregateByTenant, 
   fetchTenants,
   extractEmailInfo,
   type ArdaTenant,
-} from '../lib/arda-api';
-import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring';
-import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings';
-import { generateAlerts } from '../lib/alerts';
-import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api';
-import { resolveTenantName } from '../lib/tenant-names';
+} from '../lib/arda-api.js';
+import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring.js';
+import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings.js';
+import { generateAlerts } from '../lib/alerts.js';
+import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api.js';
+import { resolveTenantName } from '../lib/tenant-names.js';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {

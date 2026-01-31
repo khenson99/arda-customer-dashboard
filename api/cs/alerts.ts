@@ -1,24 +1,24 @@
 /**
  * Alerts API Endpoint
  * 
- * GET /api/cs/alerts
+ * GET /api/cs/alerts - Returns aggregated alerts from all accounts
+ * PATCH /api/cs/alerts/:id - Update alert status, notes, assignments
  * 
- * Returns aggregated alerts from all accounts in the portfolio.
  * Supports filtering by severity, status, accountId, and ownerId.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import type { Alert, AlertSeverity, AlertStatus } from '../../src/lib/types/account';
+import type { Alert, AlertSeverity, AlertStatus, AlertOutcome } from '../../src/lib/types/account.js';
 import { 
   aggregateByTenant, 
   fetchTenants,
   extractEmailInfo,
   type ArdaTenant,
-} from '../lib/arda-api';
-import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring';
-import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings';
-import { generateAlerts } from '../lib/alerts';
-import { resolveTenantName } from '../lib/tenant-names';
+} from '../lib/arda-api.js';
+import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring.js';
+import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings.js';
+import { generateAlerts } from '../lib/alerts.js';
+import { resolveTenantName } from '../lib/tenant-names.js';
 
 // ============================================================================
 // Types
@@ -36,6 +36,41 @@ interface AlertsResponse {
   mediumCount: number;
   lowCount: number;
 }
+
+interface AlertUpdateRequest {
+  status?: AlertStatus;
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  snoozedUntil?: string;
+  snoozeReason?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  outcome?: AlertOutcome;
+  assignedTo?: string;
+  assignedToName?: string;
+  note?: {
+    content: string;
+    createdBy: string;
+  };
+}
+
+interface AlertNote {
+  id: string;
+  alertId: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+interface AlertUpdateResponse {
+  success: boolean;
+  alertId: string;
+  updatedFields: string[];
+  note?: AlertNote;
+}
+
+// In-memory storage for alert updates (would be database in production)
+const alertUpdates = new Map<string, Partial<AlertWithAccount & { notes: AlertNote[] }>>();
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
@@ -56,7 +91,7 @@ export default async function handler(
 ) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Arda-API-Key, X-Arda-Author');
   
   // Edge caching headers
@@ -66,6 +101,11 @@ export default async function handler(
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+  
+  // Handle PATCH requests for updating alerts
+  if (req.method === 'PATCH') {
+    return handlePatchAlert(req, res);
   }
   
   if (req.method !== 'GET') {
@@ -300,6 +340,150 @@ export default async function handler(
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
+}
+
+// ============================================================================
+// PATCH Handler
+// ============================================================================
+
+async function handlePatchAlert(
+  req: VercelRequest,
+  res: VercelResponse
+): Promise<void> {
+  try {
+    // Extract alert ID from query params or body
+    const alertId = req.query.alertId as string || req.body?.alertId;
+    
+    if (!alertId) {
+      res.status(400).json({ error: 'Alert ID is required' });
+      return;
+    }
+    
+    const updateData = req.body as AlertUpdateRequest;
+    const updatedFields: string[] = [];
+    
+    // Get existing updates or create new
+    const existing = alertUpdates.get(alertId) || { notes: [] };
+    
+    // Apply updates
+    if (updateData.status) {
+      existing.status = updateData.status;
+      updatedFields.push('status');
+    }
+    
+    if (updateData.acknowledgedAt) {
+      existing.acknowledgedAt = updateData.acknowledgedAt;
+      updatedFields.push('acknowledgedAt');
+    }
+    
+    if (updateData.acknowledgedBy) {
+      existing.acknowledgedBy = updateData.acknowledgedBy;
+      updatedFields.push('acknowledgedBy');
+    }
+    
+    if (updateData.snoozedUntil) {
+      existing.snoozedUntil = updateData.snoozedUntil;
+      updatedFields.push('snoozedUntil');
+    }
+    
+    if (updateData.resolvedAt) {
+      existing.resolvedAt = updateData.resolvedAt;
+      updatedFields.push('resolvedAt');
+    }
+    
+    if (updateData.resolvedBy) {
+      existing.resolvedBy = updateData.resolvedBy;
+      updatedFields.push('resolvedBy');
+    }
+    
+    if (updateData.outcome) {
+      existing.outcome = updateData.outcome;
+      updatedFields.push('outcome');
+    }
+    
+    if (updateData.assignedTo) {
+      existing.ownerId = updateData.assignedTo;
+      updatedFields.push('ownerId');
+    }
+    
+    if (updateData.assignedToName) {
+      existing.ownerName = updateData.assignedToName;
+      updatedFields.push('ownerName');
+    }
+    
+    // Handle adding a note
+    let newNote: AlertNote | undefined;
+    if (updateData.note) {
+      newNote = {
+        id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        alertId,
+        content: updateData.note.content,
+        createdBy: updateData.note.createdBy,
+        createdAt: new Date().toISOString(),
+      };
+      
+      if (!existing.notes) {
+        existing.notes = [];
+      }
+      existing.notes.push(newNote);
+      updatedFields.push('notes');
+    }
+    
+    // Save updates
+    alertUpdates.set(alertId, existing);
+    
+    const response: AlertUpdateResponse = {
+      success: true,
+      alertId,
+      updatedFields,
+      note: newNote,
+    };
+    
+    res.status(200).json(response);
+    
+  } catch (error) {
+    console.error('Alert PATCH error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update alert',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+// ============================================================================
+// SLA Calculation Helper
+// ============================================================================
+
+interface SLACalculation {
+  hoursRemaining: number;
+  status: 'on_track' | 'at_risk' | 'breached' | 'none';
+  percentRemaining: number;
+}
+
+function calculateSLAStatus(slaDeadline: string | undefined, createdAt: string): SLACalculation {
+  if (!slaDeadline) {
+    return { hoursRemaining: Infinity, status: 'none', percentRemaining: 100 };
+  }
+  
+  const now = Date.now();
+  const deadline = new Date(slaDeadline).getTime();
+  const created = new Date(createdAt).getTime();
+  
+  const totalDuration = deadline - created;
+  const remaining = deadline - now;
+  const percentRemaining = Math.max(0, Math.min(100, (remaining / totalDuration) * 100));
+  const hoursRemaining = remaining / (1000 * 60 * 60);
+  
+  let status: SLACalculation['status'];
+  if (remaining <= 0) {
+    status = 'breached';
+  } else if (percentRemaining <= 25) {
+    status = 'at_risk';
+  } else {
+    status = 'on_track';
+  }
+  
+  return { hoursRemaining, status, percentRemaining };
 }
 
 // ============================================================================

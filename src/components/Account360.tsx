@@ -23,6 +23,7 @@ import {
   Cell,
 } from 'recharts';
 import { useAccountDetail, useAccountAlerts } from '../hooks/useAccountDetail';
+import { useTasks, useSuccessPlan, useEmails } from '../hooks/useSupabaseData';
 import { TabNavigation } from './TabNavigation';
 import { EmailTemplateModal } from './EmailTemplateModal';
 import { type TemplateCategory } from '../lib/email-templates';
@@ -1516,12 +1517,16 @@ function StakeholdersTab({
 }
 
 function TasksTab({ tenantId }: { tenantId: string }) {
-  const STORAGE_KEY = `arda_account_tasks_${tenantId}`;
-  
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  });
+  // Use Supabase hook with localStorage fallback
+  const { 
+    tasks, 
+    isLoading,
+    isFromCache,
+    addTask, 
+    deleteTask, 
+    completeTask, 
+    uncompleteTask 
+  } = useTasks(tenantId);
   
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTask, setNewTask] = useState({
@@ -1530,11 +1535,6 @@ function TasksTab({ tenantId }: { tenantId: string }) {
     priority: 'normal' as Task['priority'],
     dueDate: '',
   });
-  
-  // Persist to localStorage whenever tasks change
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  }, [tasks, STORAGE_KEY]);
   
   // Sort tasks by priority (urgent > high > normal > low), then by due date
   const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
@@ -1557,15 +1557,29 @@ function TasksTab({ tenantId }: { tenantId: string }) {
     });
   }, []);
   
-  const pendingTasks = sortTasks(tasks.filter(t => t.status !== 'completed'));
-  const completedTasks = sortTasks(tasks.filter(t => t.status === 'completed'));
+  // Map StoredTask to Task for UI compatibility
+  const mappedTasks: Task[] = tasks.map(t => ({
+    id: t.id,
+    accountId: t.accountId,
+    title: t.title,
+    description: t.description,
+    type: t.type || 'custom',
+    priority: t.priority,
+    status: t.status,
+    dueDate: t.dueDate,
+    completedAt: t.completedAt,
+    source: t.source || 'manual',
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  }));
   
-  const handleAddTask = () => {
+  const pendingTasks = sortTasks(mappedTasks.filter(t => t.status !== 'completed'));
+  const completedTasks = sortTasks(mappedTasks.filter(t => t.status === 'completed'));
+  
+  const handleAddTask = async () => {
     if (!newTask.title.trim()) return;
     
-    const now = new Date().toISOString();
-    const task: Task = {
-      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    await addTask({
       accountId: tenantId,
       title: newTask.title.trim(),
       description: newTask.description.trim() || undefined,
@@ -1574,33 +1588,21 @@ function TasksTab({ tenantId }: { tenantId: string }) {
       dueDate: newTask.dueDate || undefined,
       status: 'pending',
       source: 'manual',
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    setTasks(prev => [...prev, task]);
+    });
     setNewTask({ title: '', description: '', priority: 'normal', dueDate: '' });
     setShowAddForm(false);
   };
   
-  const handleCompleteTask = (taskId: string) => {
-    setTasks(prev => prev.map(t => 
-      t.id === taskId 
-        ? { ...t, status: 'completed' as const, completedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-        : t
-    ));
+  const handleCompleteTask = async (taskId: string) => {
+    await completeTask(taskId);
   };
   
-  const handleUncompleteTask = (taskId: string) => {
-    setTasks(prev => prev.map(t => 
-      t.id === taskId 
-        ? { ...t, status: 'pending' as const, completedAt: undefined, updatedAt: new Date().toISOString() }
-        : t
-    ));
+  const handleUncompleteTask = async (taskId: string) => {
+    await uncompleteTask(taskId);
   };
   
-  const handleDeleteTask = (taskId: string) => {
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+  const handleDeleteTask = async (taskId: string) => {
+    await deleteTask(taskId);
   };
   
   const getPriorityColor = (priority: Task['priority']) => {
@@ -1810,40 +1812,33 @@ function TasksTab({ tenantId }: { tenantId: string }) {
 }
 
 function SuccessPlanTab({ tenantId }: { tenantId: string }) {
-  const STORAGE_KEY = `arda_success_plan_${tenantId}`;
-  
-  const [successPlan, setSuccessPlan] = useState<SuccessPlan | null>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    return null; // No plan by default - user must create one
-  });
+  // Use Supabase hook with localStorage fallback
+  const { 
+    successPlan, 
+    isLoading,
+    isFromCache,
+    createPlan, 
+    updatePlan, 
+    deletePlan,
+    updateMilestone: updateMilestoneInDb,
+  } = useSuccessPlan(tenantId);
   
   const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   
-  // Persist to localStorage whenever successPlan changes
-  useEffect(() => {
-    if (successPlan) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(successPlan));
-    }
-  }, [successPlan, STORAGE_KEY]);
-  
   // Handle creating a plan from a template
-  const handleCreateFromTemplate = (templateId: string) => {
+  const handleCreateFromTemplate = async (templateId: string) => {
     const newPlan = createPlanFromTemplate(templateId, tenantId);
     if (newPlan) {
-      setSuccessPlan(newPlan);
+      await createPlan(newPlan);
       setShowTemplateSelector(false);
     }
   };
   
   // Handle deleting the plan
-  const handleDeletePlan = () => {
+  const handleDeletePlan = async () => {
     if (confirm('Are you sure you want to delete this success plan? This cannot be undone.')) {
-      localStorage.removeItem(STORAGE_KEY);
-      setSuccessPlan(null);
+      await deletePlan();
     }
   };
   
