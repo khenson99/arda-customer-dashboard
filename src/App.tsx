@@ -405,7 +405,6 @@ function HealthScore({ score }: { score: number }) {
 // Compact sparkline chart for engagement visualization in table cells
 function EngagementSparkline({ data }: { data: Array<{ week: string; activity: number }> }) {
   const hasActivity = data.some(d => d.activity > 0);
-  const maxActivity = Math.max(...data.map(d => d.activity), 1);
   
   return (
     <div className="engagement-sparkline">

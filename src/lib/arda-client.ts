@@ -437,7 +437,6 @@ export async function fetchCustomerMetrics(): Promise<CustomerMetrics[]> {
       // Derive company name
       let companyName: string;
       let tenantName: string;
-      let email: string | undefined;
       
       if (tenantInfo?.email) {
         const domain = tenantInfo.email.split('@')[1].toLowerCase();
@@ -448,7 +447,6 @@ export async function fetchCustomerMetrics(): Promise<CustomerMetrics[]> {
           companyName = domainToCompanyName(domain);
           tenantName = companyName;
         }
-        email = tenantInfo.email;
       } else {
         // Org tenant not in personal tenants list - use tenant ID as fallback
         companyName = `Org ${tenantId.slice(0, 8)}`;
