@@ -6567,6 +6567,511 @@ h3 {
 }
 
 /* ============================================================================
+   OUTREACH TAB STYLES
+   ============================================================================ */
+
+.outreach-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.outreach-section {
+  padding: var(--spacing-lg);
+}
+
+.outreach-section h3 {
+  margin-bottom: var(--spacing-md);
+  color: var(--text-primary);
+}
+
+.outreach-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.outreach-section-header h3 {
+  margin-bottom: 0;
+}
+
+/* Template Quick Access Buttons */
+.template-quick-access {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.template-category-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 44px;
+}
+
+.template-category-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+}
+
+.template-category-btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.template-category-btn .category-icon {
+  font-size: 1.25rem;
+}
+
+.template-category-btn .category-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Sent Emails List */
+.sent-emails-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.sent-email-item {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  transition: background 0.2s ease;
+}
+
+.sent-email-item:hover {
+  background: var(--bg-card-hover);
+}
+
+.sent-email-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.sent-email-subject {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.sent-email-category {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--info);
+}
+
+.sent-email-category.category-at_risk {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.sent-email-category.category-expansion {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.sent-email-category.category-renewal {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.sent-email-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Draft Emails */
+.draft-emails-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.draft-email-item {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--warning);
+}
+
+.draft-email-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.draft-email-header {
+  margin-bottom: var(--spacing-xs);
+}
+
+.draft-email-subject {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.draft-email-meta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-xs);
+}
+
+.draft-email-preview {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.draft-email-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.draft-edit-btn,
+.draft-sent-btn {
+  min-height: 36px;
+  font-size: 0.8rem;
+}
+
+.draft-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  padding: var(--spacing-xs);
+}
+
+.draft-delete-btn:hover {
+  opacity: 1;
+}
+
+/* Outreach Tips */
+.outreach-tips {
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.03) 100%);
+}
+
+.tips-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.tips-list li {
+  padding-left: var(--spacing-lg);
+  position: relative;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.tips-list li::before {
+  content: "💡";
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.tips-list li strong {
+  color: var(--text-primary);
+}
+
+/* ============================================================================
+   SUCCESS PLAN TEMPLATE SELECTOR
+   ============================================================================ */
+
+.create-plan-section {
+  padding: var(--spacing-xl);
+  text-align: center;
+}
+
+.create-plan-header {
+  margin-bottom: var(--spacing-xl);
+}
+
+.create-plan-header h3 {
+  margin-bottom: var(--spacing-sm);
+}
+
+.create-plan-header p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.create-plan-btn {
+  font-size: 1rem;
+}
+
+.template-selector {
+  text-align: left;
+}
+
+.template-selector h4 {
+  margin-bottom: var(--spacing-md);
+  text-align: center;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.template-card {
+  padding: var(--spacing-lg);
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.template-card:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+}
+
+.template-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.template-category {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+}
+
+.template-duration {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.template-name {
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-primary);
+}
+
+.template-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.4;
+}
+
+.template-stats {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.cancel-btn {
+  display: block;
+  margin: 0 auto;
+}
+
+/* Success Plan Info Row */
+.success-plan-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
+}
+
+.success-plan-actions {
+  flex-shrink: 0;
+}
+
+.delete-plan-btn {
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  min-height: auto;
+}
+
+.success-plan-info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--glass-border);
+}
+
+.plan-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-info-item .info-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.plan-info-item .info-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plan-info-item.overdue .info-value {
+  color: var(--danger);
+}
+
+.plan-info-item.urgent .info-value {
+  color: var(--warning);
+}
+
+.plan-info-item.overdue-warning {
+  background: rgba(239, 68, 68, 0.1);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+}
+
+.plan-info-item.overdue-warning .info-value {
+  color: var(--danger);
+}
+
+/* Goals Section */
+.goals-section {
+  padding: var(--spacing-lg);
+}
+
+.goals-section h3 {
+  margin-bottom: var(--spacing-md);
+}
+
+.goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.goal-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.goal-status-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.goal-description {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.goal-status-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.goal-status-badge.achieved {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.goal-status-badge.in_progress {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--info);
+}
+
+.goal-status-badge.at_risk {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.goal-status-badge.missed {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.goal-status-badge.pending {
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+
+/* Overview Top Section */
+.overview-top-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* Milestone Alerts Section */
+.milestone-alerts-section {
+  padding: var(--spacing-lg);
+  border-left: 4px solid var(--warning);
+}
+
+.milestone-alerts-section h3 {
+  margin-bottom: var(--spacing-md);
+}
+
+.milestone-alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.milestone-overdue-alert {
+  background: rgba(245, 158, 11, 0.05);
+}
+
+/* Email Action Button in Header */
+.header-email-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
    SWIPE GESTURES SUPPORT (CSS prep for JS implementation)
    ============================================================================ */
 

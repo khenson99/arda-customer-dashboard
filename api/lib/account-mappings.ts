@@ -354,7 +354,7 @@ export async function fetchCodaOverrides(
         return overrides;
       }
       
-      const rows = await rowsResponse.json() as { items?: Array<{ values: Record<string, unknown> }>; nextPageToken?: string };
+      const rows = await rowsResponse.json() as { items?: Array<{ id: string; values: Record<string, unknown> }>; nextPageToken?: string };
       
       for (const row of rows.items || []) {
         const values = row.values as Record<string, unknown>;
