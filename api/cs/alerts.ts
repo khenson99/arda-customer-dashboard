@@ -120,6 +120,56 @@ interface CacheEntry {
 
 let alertsCache: CacheEntry | null = null;
 const CACHE_TTL_MS = 60 * 1000; // 1 minute (shorter than portfolio since alerts are more dynamic)
+const MAX_PAGE_SIZE = 200;
+
+function parsePositiveInt(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.floor(parsed);
+}
+
+function parseFields(value: unknown): string[] | null {
+  if (!value) return null;
+  const raw = Array.isArray(value) ? value.join(',') : String(value);
+  const fields = raw
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (fields.length === 0 || fields.includes('*')) return null;
+  return fields;
+}
+
+function selectAlertFields(alert: AlertWithAccount, fields: string[]): Partial<AlertWithAccount> {
+  const selected: Partial<AlertWithAccount> = {};
+  for (const field of fields) {
+    if (field in alert) {
+      (selected as Record<string, unknown>)[field] = (alert as Record<string, unknown>)[field];
+    }
+  }
+  if (!fields.includes('id')) {
+    selected.id = alert.id;
+  }
+  return selected;
+}
+
+function paginate<T>(items: T[], limit?: number, offset?: number, page?: number) {
+  if (!limit) {
+    return { items, pagination: undefined };
+  }
+  const safeLimit = Math.min(limit, MAX_PAGE_SIZE);
+  const effectiveOffset = page ? (page - 1) * safeLimit : (offset || 0);
+  const paged = items.slice(effectiveOffset, effectiveOffset + safeLimit);
+  const totalPages = Math.max(1, Math.ceil(items.length / safeLimit));
+  return {
+    items: paged,
+    pagination: {
+      limit: safeLimit,
+      offset: effectiveOffset,
+      ...(page ? { page, totalPages } : {}),
+      hasMore: effectiveOffset + safeLimit < items.length,
+    },
+  };
+}
 
 // ============================================================================
 // Persistence helpers (Supabase first, in-memory fallback)
@@ -255,9 +305,15 @@ export default async function handler(
     accountId: filterAccountId, 
     ownerId: filterOwnerId,
     limit: limitParam,
+    offset: offsetParam,
+    page: pageParam,
+    fields: fieldsParam,
   } = req.query;
   
-  const limit = limitParam ? parseInt(String(limitParam), 10) : undefined;
+  const limit = parsePositiveInt(limitParam);
+  const offset = parsePositiveInt(offsetParam);
+  const page = parsePositiveInt(pageParam);
+  const fields = parseFields(fieldsParam);
   
   try {
     // Get API credentials
@@ -477,19 +533,21 @@ export default async function handler(
       filteredAlerts = filteredAlerts.filter(a => a.ownerId === ownerIdFilter);
     }
     
-    // Apply limit
-    if (limit && limit > 0) {
-      filteredAlerts = filteredAlerts.slice(0, limit);
-    }
-    
+    const totalCount = filteredAlerts.length;
+    const selectedAlerts = fields
+      ? filteredAlerts.map((alert) => selectAlertFields(alert, fields))
+      : filteredAlerts;
+    const { items, pagination } = paginate(selectedAlerts, limit, offset, page);
+
     // Build filtered response
-    const response: AlertsResponse = {
-      alerts: filteredAlerts,
-      totalCount: filteredAlerts.length,
+    const response: AlertsResponse & { pagination?: Record<string, unknown> } = {
+      alerts: items as AlertWithAccount[],
+      totalCount,
       criticalCount: filteredAlerts.filter(a => a.severity === 'critical').length,
       highCount: filteredAlerts.filter(a => a.severity === 'high').length,
       mediumCount: filteredAlerts.filter(a => a.severity === 'medium').length,
       lowCount: filteredAlerts.filter(a => a.severity === 'low').length,
+      ...(pagination ? { pagination } : {}),
     };
     
     return res.status(200).json(response);

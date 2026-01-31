@@ -30,6 +30,56 @@ interface CacheEntry {
 
 let portfolioCache: CacheEntry | null = null;
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const MAX_PAGE_SIZE = 200;
+
+function parsePositiveInt(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.floor(parsed);
+}
+
+function parseFields(value: unknown): string[] | null {
+  if (!value) return null;
+  const raw = Array.isArray(value) ? value.join(',') : String(value);
+  const fields = raw
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (fields.length === 0 || fields.includes('*')) return null;
+  return fields;
+}
+
+function selectAccountFields(account: AccountSummary, fields: string[]): Partial<AccountSummary> {
+  const selected: Partial<AccountSummary> = {};
+  for (const field of fields) {
+    if (field in account) {
+      (selected as Record<string, unknown>)[field] = (account as Record<string, unknown>)[field];
+    }
+  }
+  if (!fields.includes('id')) {
+    selected.id = account.id;
+  }
+  return selected;
+}
+
+function paginate<T>(items: T[], limit?: number, offset?: number, page?: number) {
+  if (!limit) {
+    return { items, pagination: undefined };
+  }
+  const safeLimit = Math.min(limit, MAX_PAGE_SIZE);
+  const effectiveOffset = page ? (page - 1) * safeLimit : (offset || 0);
+  const paged = items.slice(effectiveOffset, effectiveOffset + safeLimit);
+  const totalPages = Math.max(1, Math.ceil(items.length / safeLimit));
+  return {
+    items: paged,
+    pagination: {
+      limit: safeLimit,
+      offset: effectiveOffset,
+      ...(page ? { page, totalPages } : {}),
+      hasMore: effectiveOffset + safeLimit < items.length,
+    },
+  };
+}
 
 export default async function handler(
   req: VercelRequest,
@@ -63,17 +113,27 @@ export default async function handler(
     // Note: This significantly increases API response time due to Stripe calls
     // Use sparingly to avoid rate limits (Stripe allows 100 req/sec)
     const includeStripe = req.query.includeStripe === 'true';
+    const fields = parseFields(req.query.fields);
+    const limit = parsePositiveInt(req.query.limit);
+    const offset = parsePositiveInt(req.query.offset);
+    const page = parsePositiveInt(req.query.page);
     const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
     const stripeEnabled = includeStripe && !!stripeKey;
     
     // Check cache (skip cache if Stripe is requested - more dynamic data)
     const now = Date.now();
     if (!stripeEnabled && portfolioCache && (now - portfolioCache.timestamp) < CACHE_TTL_MS) {
+      const cachedAccounts = fields
+        ? portfolioCache.data.map((account) => selectAccountFields(account, fields))
+        : portfolioCache.data;
+      const { items, pagination } = paginate(cachedAccounts, limit, offset, page);
       return res.status(200).json({
-        accounts: portfolioCache.data,
+        accounts: items,
         cached: true,
         cacheAge: now - portfolioCache.timestamp,
+        totalAccounts: portfolioCache.data.length,
         stripeEnriched: false,
+        ...(pagination ? { pagination } : {}),
       });
     }
     
@@ -388,13 +448,19 @@ export default async function handler(
       };
     }
     
+    const responseAccounts = fields
+      ? accounts.map((account) => selectAccountFields(account, fields))
+      : accounts;
+    const { items, pagination } = paginate(responseAccounts, limit, offset, page);
+
     return res.status(200).json({
-      accounts,
+      accounts: items,
       cached: false,
       totalAccounts: accounts.length,
       excludedAccounts: tenantAggregation.size - accounts.length,
       stripeEnriched: stripeEnabled,
       stripeAccountsEnriched: stripeEnabled ? stripeDataByAccountId.size : 0,
+      ...(pagination ? { pagination } : {}),
     });
     
   } catch (error) {

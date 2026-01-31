@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { fetchActivityEvents, fetchActivityAggregate, type ActivityEvent } from '../lib/arda-client';
 import { TabNavigation } from './TabNavigation';
 
@@ -37,6 +38,7 @@ export function LiveFeed() {
   const previousEventsRef = useRef<string[]>([]);
   const [countdown, setCountdown] = useState(30);
   const [showFilters, setShowFilters] = useState(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   // Main events query
   const { data: events, isLoading, error, refetch, isFetching, dataUpdatedAt } = useQuery<ActivityEvent[]>({
@@ -126,6 +128,13 @@ export function LiveFeed() {
       return true;
     });
   }, [events, filters]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredEvents.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 120,
+    overscan: 8,
+  });
 
   // Calculate today's stats
   const todayStats = useMemo(() => {
@@ -445,16 +454,30 @@ export function LiveFeed() {
           </div>
         ) : filteredEvents && filteredEvents.length > 0 ? (
           <div className="glass-card feed-container">
-            <div className="feed-list">
-              {filteredEvents.map((event, index) => (
-                <FeedEntry 
-                  key={event.id} 
-                  event={event} 
-                  isNew={index < newEventCount && showNewActivityBanner}
-                  isExpanded={expandedEvents.has(event.id)}
-                  onToggleExpand={() => toggleExpand(event.id)}
-                />
-              ))}
+            <div className="feed-list feed-list-virtual" ref={listRef}>
+              <div
+                className="feed-list-virtual-inner"
+                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const event = filteredEvents[virtualRow.index];
+                  if (!event) return null;
+                  return (
+                    <div
+                      key={event.id}
+                      className="feed-list-virtual-row"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <FeedEntry
+                        event={event}
+                        isNew={virtualRow.index < newEventCount && showNewActivityBanner}
+                        isExpanded={expandedEvents.has(event.id)}
+                        onToggleExpand={() => toggleExpand(event.id)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         ) : (
@@ -477,7 +500,7 @@ export function LiveFeed() {
 }
 
 // Activity Sparkline Component
-function ActivitySparkline({ data }: { data: Array<{ date: string; items: number; cards: number; orders: number }> }) {
+const ActivitySparkline = memo(function ActivitySparkline({ data }: { data: Array<{ date: string; items: number; cards: number; orders: number }> }) {
   const values = data.map(d => d.items + d.cards + d.orders);
   const max = Math.max(...values, 1);
   const hasActivity = values.some(v => v > 0);
@@ -506,10 +529,10 @@ function ActivitySparkline({ data }: { data: Array<{ date: string; items: number
       />
     </svg>
   );
-}
+});
 
 // Feed Entry Component
-function FeedEntry({ 
+const FeedEntry = memo(function FeedEntry({ 
   event, 
   isNew, 
   isExpanded,
@@ -630,7 +653,7 @@ function FeedEntry({
       </div>
     </div>
   );
-}
+});
 
 // Helper: Get avatar color from tenant ID
 function getAvatarColor(tenantId: string): string {

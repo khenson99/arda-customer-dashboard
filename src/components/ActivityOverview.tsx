@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchActivityAggregate, type ActivityAggregate } from '../lib/arda-client';
@@ -38,6 +38,9 @@ export function ActivityOverview() {
     );
   }
 
+  const timelineData = useMemo(() => data?.timeline ?? [], [data?.timeline]);
+  const customers = useMemo(() => data?.byCustomer ?? [], [data?.byCustomer]);
+
   return (
     <div className="dashboard">
       <TabNavigation />
@@ -74,7 +77,7 @@ export function ActivityOverview() {
               <h3>Platform Activity ({days} Days)</h3>
               <div style={{ height: 350 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={data.timeline} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <AreaChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="itemsGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#FC5928" stopOpacity={0.8} />
@@ -151,7 +154,7 @@ export function ActivityOverview() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.byCustomer.map((customer) => (
+                  {customers.map((customer) => (
                     <tr key={customer.tenantId} className="customer-row">
                       <td>
                         <Link to={`/account/${customer.tenantId}`} className="customer-link">
@@ -167,7 +170,7 @@ export function ActivityOverview() {
                       <td className="metric-cell total">{customer.total}</td>
                     </tr>
                   ))}
-                  {data.byCustomer.length === 0 && (
+                  {customers.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                         No activity in this time period
@@ -185,7 +188,7 @@ export function ActivityOverview() {
 }
 
 // Mini sparkline for the activity table
-function MiniSparkline({ data }: { data: number[] }) {
+const MiniSparkline = memo(function MiniSparkline({ data }: { data: number[] }) {
   const max = Math.max(...data, 1);
   const hasActivity = data.some(d => d > 0);
 
@@ -213,4 +216,4 @@ function MiniSparkline({ data }: { data: number[] }) {
       />
     </svg>
   );
-}
+});

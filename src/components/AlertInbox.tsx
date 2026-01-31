@@ -5,9 +5,10 @@
  * Enables CSMs to prioritize work, track alert resolution, and execute playbooks.
  */
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { TabNavigation } from './TabNavigation';
 import { fetchAlerts, queryKeys, defaultQueryOptions, type AlertWithAccount } from '../lib/api/cs-api';
 import type { AlertSeverity, AlertCategory, AlertStatus, AlertType } from '../lib/types/account';
@@ -58,7 +59,29 @@ type SLAInfo = {
   deadline: string | null;
   timeRemaining: string;
   percentRemaining: number;
- };
+};
+
+const ACTION_LABELS: Record<AlertActionLog['action'], string> = {
+  acknowledged: 'Acknowledged',
+  snoozed: 'Snoozed',
+  resolved: 'Resolved',
+  assigned: 'Assigned',
+  note_added: 'Note Added',
+  playbook_started: 'Playbook Started',
+  playbook_completed: 'Playbook Completed',
+  reopened: 'Reopened',
+};
+
+const ACTION_ICONS: Record<AlertActionLog['action'], string> = {
+  acknowledged: '✓',
+  snoozed: '😴',
+  resolved: '✅',
+  assigned: '👤',
+  note_added: '📝',
+  playbook_started: '📋',
+  playbook_completed: '🎉',
+  reopened: '↩️',
+};
 
 interface EnrichedAlert extends AlertWithAccount {
   slaInfo: SLAInfo;
@@ -84,6 +107,7 @@ export function AlertInbox() {
   
   // Detail panel state
   const [detailPanelAlertId, setDetailPanelAlertId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   
   // Fetch alerts from the dedicated alerts API
   const { data: alertsResponse, isLoading, error } = useQuery({
@@ -201,6 +225,13 @@ export function AlertInbox() {
       }
     });
   }, [filteredAlerts, sortBy]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: sortedAlerts.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 140,
+    overscan: 6,
+  });
   
   // Stats computed from all alerts
   const stats = useMemo(() => {
@@ -478,17 +509,31 @@ export function AlertInbox() {
               </div>
             </div>
             
-            <div className="alerts-list">
-              {sortedAlerts.map((alert) => (
-                <AlertListItem 
-                  key={alert.id} 
-                  alert={alert}
-                  isSelected={selectedAlertIds.has(alert.id)}
-                  onToggleSelect={() => handleToggleSelect(alert.id)}
-                  onOpenDetail={() => setDetailPanelAlertId(alert.id)}
-                  onStateChange={refreshAlerts}
-                />
-              ))}
+            <div className="alerts-list alerts-list-virtual" ref={listRef}>
+              <div
+                className="alerts-list-virtual-inner"
+                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const alert = sortedAlerts[virtualRow.index];
+                  if (!alert) return null;
+                  return (
+                    <div
+                      key={alert.id}
+                      className="alerts-list-virtual-row"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <AlertListItem
+                        alert={alert}
+                        isSelected={selectedAlertIds.has(alert.id)}
+                        onToggleSelect={() => handleToggleSelect(alert.id)}
+                        onOpenDetail={() => setDetailPanelAlertId(alert.id)}
+                        onStateChange={refreshAlerts}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         ) : (
@@ -744,6 +789,30 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
               <div className="playbook-preview">
                 <span className="playbook-name">📋 {alert.recommendedPlaybook.name}</span>
                 <span className="playbook-duration">{alert.recommendedPlaybook.estimatedDays} days</span>
+              </div>
+            </div>
+          )}
+
+          {alert.actionLog && alert.actionLog.length > 0 && (
+            <div className="alert-action-log-summary">
+              <strong>Recent Activity</strong>
+              <div className="alert-action-log-items">
+                {alert.actionLog.slice(-3).reverse().map(entry => (
+                  <div key={entry.id} className="alert-action-log-item">
+                    <span className="history-icon">{ACTION_ICONS[entry.action]}</span>
+                    <div className="history-content">
+                      <div className="history-row">
+                        <span className="history-action">{ACTION_LABELS[entry.action]}</span>
+                        <span className="history-time">{formatRelativeTime(entry.timestamp)}</span>
+                      </div>
+                      {formatActionLogDetails(entry) && (
+                        <span className="history-details">
+                          {formatActionLogDetails(entry)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1446,28 +1515,6 @@ function HistoryTabContent({ actionLog, notes }: HistoryTabContentProps) {
     })),
   ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   
-  const actionLabels: Record<AlertActionLog['action'], string> = {
-    acknowledged: 'Acknowledged',
-    snoozed: 'Snoozed',
-    resolved: 'Resolved',
-    assigned: 'Assigned',
-    note_added: 'Note Added',
-    playbook_started: 'Playbook Started',
-    playbook_completed: 'Playbook Completed',
-    reopened: 'Reopened',
-  };
-  
-  const actionIcons: Record<AlertActionLog['action'], string> = {
-    acknowledged: '✓',
-    snoozed: '😴',
-    resolved: '✅',
-    assigned: '👤',
-    note_added: '📝',
-    playbook_started: '📋',
-    playbook_completed: '🎉',
-    reopened: '↩️',
-  };
-  
   return (
     <div className="detail-tab-content">
       <section className="detail-section">
@@ -1478,13 +1525,13 @@ function HistoryTabContent({ actionLog, notes }: HistoryTabContentProps) {
               <div key={index} className="history-item">
                 {item.type === 'action' ? (
                   <>
-                    <span className="history-icon">{actionIcons[item.data.action]}</span>
+                    <span className="history-icon">{ACTION_ICONS[item.data.action]}</span>
                     <div className="history-content">
-                      <span className="history-action">{actionLabels[item.data.action]}</span>
+                      <span className="history-action">{ACTION_LABELS[item.data.action]}</span>
                       <span className="history-actor">by {item.data.actorName}</span>
-                      {item.data.details && Object.keys(item.data.details).length > 0 && (
+                      {formatActionLogDetails(item.data) && (
                         <span className="history-details">
-                          {JSON.stringify(item.data.details)}
+                          {formatActionLogDetails(item.data)}
                         </span>
                       )}
                     </div>
@@ -1529,6 +1576,26 @@ function formatRelativeTime(timestamp: string): string {
   if (hours > 0) return `${hours}h ago`;
   if (minutes > 0) return `${minutes}m ago`;
   return 'just now';
+}
+
+function formatActionLogDetails(log: AlertActionLog): string | undefined {
+  const details = log.details || {};
+  switch (log.action) {
+    case 'snoozed':
+      return details.days ? `Snoozed for ${details.days}d${details.reason ? ` — ${details.reason}` : ''}` : undefined;
+    case 'assigned':
+      return details.assigneeName ? `Assigned to ${details.assigneeName}` : undefined;
+    case 'resolved':
+      return details.outcome ? `Outcome: ${details.outcome}${details.notes ? ` — ${details.notes}` : ''}` : undefined;
+    case 'playbook_started':
+      return details.playbookId ? `Started playbook ${details.playbookId}` : undefined;
+    case 'playbook_completed':
+      return details.playbookId ? `Completed playbook ${details.playbookId}` : 'Playbook completed';
+    case 'note_added':
+      return details.content ? `Note: ${details.content}` : undefined;
+    default:
+      return undefined;
+  }
 }
 
 export default AlertInbox;

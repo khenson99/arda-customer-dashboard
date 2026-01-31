@@ -67,7 +67,7 @@ describe('App row navigation', () => {
       </MemoryRouter>
     );
 
-    const row = screen.getByText('Tenant One').closest('tr');
+    const row = (await screen.findByText('Tenant One')).closest('tr');
     if (!row) throw new Error('Row not found');
 
     await user.click(row);

@@ -153,8 +153,42 @@ export default async function handler(
 
     
     if (!tenantInfo) {
-      return res.status(404).json({ error: 'Account not found' });
+      // Handle orphan tenants: tenants with activity data but no tenant registry entry
+      // Check if this tenantId exists in items/kanban/orders
+      const hasItemActivity = items.some(item => 
+        (item.metadata as Record<string, unknown>)?.tenantId === accountId
+      );
+      const hasKanbanActivity = kanbanCards.some(card => 
+        (card.metadata as Record<string, unknown>)?.tenantId === accountId
+      );
+      const hasOrderActivity = orders.some(order => 
+        (order.metadata as Record<string, unknown>)?.tenantId === accountId
+      );
+      
+      if (hasItemActivity || hasKanbanActivity || hasOrderActivity) {
+        // This is an orphan tenant - create synthetic tenant info
+        tenantId = accountId;
+        const syntheticTenantName = `Org ${accountId.slice(0, 8)}`;
+        tenantInfo = {
+          rId: accountId,
+          asOf: { effective: Date.now(), recorded: Date.now() },
+          payload: {
+            eId: accountId,
+            tenantName: syntheticTenantName,
+            company: { name: syntheticTenantName },
+            plan: 'unknown',
+          },
+          metadata: {},
+          author: 'system',
+          createdBy: 'system',
+          createdAt: { effective: Date.now() - 30 * 24 * 60 * 60 * 1000, recorded: Date.now() }, // Default to 30 days ago
+          retired: false,
+        } as ArdaTenant;
+      } else {
+        return res.status(404).json({ error: 'Account not found' });
+      }
     }
+
     
     // Filter entities for this tenant
     const tenantItems = items.filter(item => 

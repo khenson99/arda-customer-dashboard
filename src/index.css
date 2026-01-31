@@ -1244,6 +1244,24 @@ h3 {
   flex-direction: column;
 }
 
+.feed-list-virtual {
+  max-height: 70vh;
+  overflow: auto;
+  position: relative;
+}
+
+.feed-list-virtual-inner {
+  position: relative;
+  width: 100%;
+}
+
+.feed-list-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
 .feed-entry {
   display: flex;
   align-items: flex-start;
@@ -2190,6 +2208,24 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+}
+
+.alerts-list-virtual {
+  max-height: 70vh;
+  overflow: auto;
+  position: relative;
+}
+
+.alerts-list-virtual-inner {
+  position: relative;
+  width: 100%;
+}
+
+.alerts-list-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
 }
 
 .alert-list-item {

@@ -155,6 +155,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const mode = String(req.query.mode || 'events');
     const limit = Math.max(1, parseNumber(req.query.limit, 100));
+    const offset = Math.max(0, parseNumber(req.query.offset, 0));
+    const page = Math.max(0, parseNumber(req.query.page, 0));
     const days = Math.max(1, parseNumber(req.query.days, 30));
     const since = parseNumber(req.query.since, 0);
     const tenantIdFilter = req.query.tenantId ? String(req.query.tenantId) : undefined;
@@ -238,7 +240,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(buildActivityAggregate(events, days));
     }
 
-    return res.status(200).json(events.slice(0, limit));
+    const effectiveOffset = page ? (page - 1) * limit : offset;
+    res.setHeader('X-Total-Count', events.length.toString());
+    res.setHeader('X-Page-Limit', limit.toString());
+    res.setHeader('X-Page-Offset', effectiveOffset.toString());
+    return res.status(200).json(events.slice(effectiveOffset, effectiveOffset + limit));
   } catch (error) {
     console.error('Activity API error:', error);
     return res.status(500).json({
