@@ -20,7 +20,7 @@ import { buildAccountMappings, fetchCodaOverrides } from '../../server/lib/accou
 import { generateAlerts } from '../../server/lib/alerts.js';
 import { resolveTenantName } from '../../server/lib/tenant-names.js';
 import { getSupabaseServerClient } from '../../server/lib/supabase-server.js';
-import { requireApiKey } from '../../server/lib/auth.js';
+import { requireApiKey } from '../lib/auth.js';
 
 // ============================================================================
 // Types

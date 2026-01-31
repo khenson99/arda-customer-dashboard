@@ -20,7 +20,7 @@ import { buildAccountMappings, fetchCodaOverrides } from '../../server/lib/accou
 import { generateAlerts } from '../../server/lib/alerts.js';
 import { fetchCustomerByDomain, getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../server/lib/stripe-api.js';
 import { resolveTenantName, TENANT_NAMES } from '../../server/lib/tenant-names.js';
-import { requireApiKey } from '../../server/lib/auth.js';
+import { requireApiKey } from '../lib/auth.js';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {

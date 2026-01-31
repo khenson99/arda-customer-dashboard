@@ -442,7 +442,100 @@ function buildWeeklyTimeline(timestamps: number[]): Array<{ week: string; activi
   return weeks;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function buildActivityTimelineFromTrend(trend: number[]): Array<{ week: string; activity: number }> {
+  if (!trend || trend.length === 0) return [];
+  return trend.map((activity, index) => ({
+    week: `W${index + 1}`,
+    activity,
+  }));
+}
+
+function deriveStageFromCounts(
+  itemCount: number,
+  kanbanCardCount: number,
+  orderCount: number
+): CustomerMetrics['stage'] {
+  if (orderCount > 0 || (kanbanCardCount > 0 && itemCount > 0)) {
+    return 'live';
+  }
+  if (kanbanCardCount > 0) {
+    return 'training';
+  }
+  if (itemCount > 0) {
+    return 'deployed';
+  }
+  return 'signed';
+}
+
+async function fetchCsJson<T>(path: string): Promise<T> {
+  const response = await fetch(path, { method: 'GET' });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `API Error: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function fetchCustomerMetricsFromServer(): Promise<CustomerMetrics[]> {
+  const [portfolio, alertsResponse] = await Promise.all([
+    fetchPortfolio(true),
+    fetchAlerts(),
+  ]);
+
+  const alertsByAccountId = new Map<string, Alert[]>();
+  for (const alert of alertsResponse.alerts) {
+    if (!alertsByAccountId.has(alert.accountId)) {
+      alertsByAccountId.set(alert.accountId, []);
+    }
+    alertsByAccountId.get(alert.accountId)!.push(alert);
+  }
+
+  const now = Date.now();
+
+  return portfolio.accounts.map((account) => {
+    const itemCount = account.itemCount || 0;
+    const kanbanCardCount = account.kanbanCardCount || 0;
+    const orderCount = account.orderCount || 0;
+    const daysInactive = account.daysSinceLastActivity || 0;
+    const accountAgeDays = account.accountAgeDays || 0;
+    const createdAt = new Date(now - accountAgeDays * DAY_MS).toISOString();
+    const lastActivityDate = new Date(now - daysInactive * DAY_MS).toISOString();
+    const alerts = alertsByAccountId.get(account.id) || [];
+
+    return {
+      tenantId: account.primaryTenantId || account.id,
+      tenantName: account.name,
+      companyName: account.name,
+      displayName: account.name,
+      assignedCSM: account.ownerName,
+      tier: account.tier,
+      plan: account.tier || 'Unknown',
+      status: account.onboardingStatus === 'completed' ? 'ACTIVE' : 'Unknown',
+      createdAt,
+      itemCount,
+      kanbanCardCount,
+      orderCount,
+      userCount: account.activeUsers,
+      lastActivityDate,
+      healthScore: account.healthScore,
+      daysInactive,
+      alerts,
+      stage: deriveStageFromCounts(itemCount, kanbanCardCount, orderCount),
+      lifecycleStage: account.lifecycleStage,
+      interactions: [],
+      accountAgeDays,
+      users: [],
+      activityTimeline: buildActivityTimelineFromTrend(account.activityTrend || []),
+    } as CustomerMetrics;
+  });
+}
+
 export async function fetchCustomerMetrics(): Promise<CustomerMetrics[]> {
+  if (import.meta.env.PROD) {
+    return fetchCustomerMetricsFromServer();
+  }
   try {
     // Fetch all data in parallel (including Coda overrides for user-edited names)
     const [tenantsResult, itemsResult, kanbanResult, , ordersResult, codaOverrides] = await Promise.all([
@@ -946,6 +1039,14 @@ export async function fetchActivityEvents(options?: {
   tenantId?: string;
   limit?: number;
 }): Promise<ActivityEvent[]> {
+  if (import.meta.env.PROD) {
+    const params = new URLSearchParams();
+    params.set('mode', 'events');
+    if (options?.since) params.set('since', String(options.since));
+    if (options?.tenantId) params.set('tenantId', options.tenantId);
+    if (options?.limit) params.set('limit', String(options.limit));
+    return fetchCsJson<ActivityEvent[]>(`/api/cs/activity?${params.toString()}`);
+  }
   const limit = options?.limit || 100;
   
   // Fetch all entities in parallel
@@ -1054,6 +1155,13 @@ export async function fetchActivityAggregate(options?: {
   days?: number;
 }): Promise<ActivityAggregate> {
   const days = options?.days || 30;
+
+  if (import.meta.env.PROD) {
+    const params = new URLSearchParams();
+    params.set('mode', 'aggregate');
+    params.set('days', String(days));
+    return fetchCsJson<ActivityAggregate>(`/api/cs/activity?${params.toString()}`);
+  }
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 
   // Fetch all events
