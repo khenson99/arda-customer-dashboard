@@ -221,6 +221,74 @@ export async function fetchCustomerById(
 }
 
 /**
+ * Search for Stripe customers by email domain
+ * Returns the first customer found with an email matching the domain
+ */
+export async function fetchCustomerByDomain(
+  domain: string,
+  apiKey: string
+): Promise<StripeCustomer | null> {
+  try {
+    console.log('[Stripe API] Searching for customers by domain:', domain);
+    
+    // Stripe search API allows searching by email with wildcards
+    // We'll use the search endpoint to find customers with emails ending in the domain
+    const searchQuery = `email~"@${domain}"`;
+    
+    const result = await stripeGet<StripeListResponse<StripeCustomer>>(
+      '/customers/search',
+      apiKey,
+      { query: searchQuery, limit: '10' }
+    );
+    
+    console.log('[Stripe API] Domain search result:', {
+      domain,
+      found: result.data.length,
+      customers: result.data.map(c => ({ id: c.id, email: c.email, name: c.name })),
+    });
+    
+    // Return the first customer found (could be the primary billing contact)
+    // If multiple, prefer one with an active subscription (would need additional logic)
+    if (result.data.length > 0) {
+      return result.data[0];
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[Stripe API] Failed to search customers by domain:', error);
+    
+    // Fallback: List recent customers and filter by domain
+    // This is less efficient but works if search API fails
+    try {
+      console.log('[Stripe API] Falling back to list and filter for domain:', domain);
+      const listResult = await stripeGet<StripeListResponse<StripeCustomer>>(
+        '/customers',
+        apiKey,
+        { limit: '100' }
+      );
+      
+      const domainLower = domain.toLowerCase();
+      const matchingCustomer = listResult.data.find(c => 
+        c.email?.toLowerCase().endsWith(`@${domainLower}`)
+      );
+      
+      if (matchingCustomer) {
+        console.log('[Stripe API] Found customer via list fallback:', {
+          id: matchingCustomer.id,
+          email: matchingCustomer.email,
+          name: matchingCustomer.name,
+        });
+        return matchingCustomer;
+      }
+    } catch (listError) {
+      console.error('[Stripe API] List fallback also failed:', listError);
+    }
+    
+    return null;
+  }
+}
+
+/**
  * Fetch subscriptions for a customer
  */
 export async function fetchSubscriptions(

@@ -221,18 +221,22 @@ export default async function handler(
     // Priority: 1) TENANT_NAMES stripeEmail, 2) extracted email from tenant name
     const stripeEmail = tenantNameInfo?.stripeEmail || emailInfo2?.email;
     const stripeCustomerId = tenantNameInfo?.stripeCustomerId || mapping?.stripeId;
+    // Domain for fallback search: from TENANT_NAMES, mapping, or extracted from email
+    const stripeDomain = tenantNameInfo?.domain || mapping?.domain || emailInfo2?.domain;
     
     console.log('[Stripe Debug] Tenant Stripe lookup:', {
       tenantId,
       tenantName: tenantInfo.payload.tenantName,
       stripeEmail,
       stripeCustomerId,
+      stripeDomain,
       tenantNameInfo: tenantNameInfo ? { name: tenantNameInfo.name, domain: tenantNameInfo.domain } : null,
     });
     
     const stripeData = await fetchStripeDataForAccount(
       stripeEmail,
-      stripeCustomerId
+      stripeCustomerId,
+      stripeDomain
     );
     
     // Fetch HubSpot data for stakeholder enrichment
@@ -560,16 +564,23 @@ function calculateExpansionPotential(
 /**
  * Attempt to fetch Stripe data for an account
  * Returns undefined if Stripe is not configured or customer not found
+ * 
+ * Search priority:
+ * 1. Direct Stripe customer ID (if provided)
+ * 2. Exact email match
+ * 3. Domain-based search (find any customer with matching email domain)
  */
 async function fetchStripeDataForAccount(
   email?: string,
-  stripeCustomerId?: string
+  stripeCustomerId?: string,
+  domain?: string
 ): Promise<StripeEnrichedMetrics | undefined> {
   const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
   
   console.log('[Stripe Debug] Attempting Stripe lookup:', {
     email,
     stripeCustomerId,
+    domain,
     hasStripeKey: !!stripeKey,
     keyPrefix: stripeKey ? stripeKey.slice(0, 10) + '...' : 'none',
   });
@@ -579,13 +590,14 @@ async function fetchStripeDataForAccount(
     return undefined;
   }
   
-  if (!email && !stripeCustomerId) {
-    console.log('[Stripe Debug] No email or customer ID provided');
+  if (!email && !stripeCustomerId && !domain) {
+    console.log('[Stripe Debug] No email, customer ID, or domain provided');
     return undefined;
   }
   
   try {
-    const stripeData = await getStripeEnrichedMetrics(
+    // First try direct lookup by customer ID or email
+    let stripeData = await getStripeEnrichedMetrics(
       { 
         email: email,
         customerId: stripeCustomerId,
@@ -593,7 +605,35 @@ async function fetchStripeDataForAccount(
       stripeKey
     );
     
-    console.log('[Stripe Debug] Stripe lookup result:', {
+    console.log('[Stripe Debug] Initial Stripe lookup result:', {
+      found: stripeData.found,
+      customerId: stripeData.customerId,
+      plan: stripeData.plan,
+    });
+    
+    // If not found and we have a domain, try domain-based search
+    if (!stripeData.found && domain) {
+      console.log('[Stripe Debug] Trying domain-based search for:', domain);
+      
+      const { fetchCustomerByDomain } = await import('../../lib/stripe-api.js');
+      const domainCustomer = await fetchCustomerByDomain(domain, stripeKey);
+      
+      if (domainCustomer) {
+        console.log('[Stripe Debug] Found customer via domain search:', {
+          id: domainCustomer.id,
+          email: domainCustomer.email,
+          name: domainCustomer.name,
+        });
+        
+        // Re-fetch with the found customer ID
+        stripeData = await getStripeEnrichedMetrics(
+          { customerId: domainCustomer.id },
+          stripeKey
+        );
+      }
+    }
+    
+    console.log('[Stripe Debug] Final Stripe lookup result:', {
       found: stripeData.found,
       customerId: stripeData.customerId,
       plan: stripeData.plan,
