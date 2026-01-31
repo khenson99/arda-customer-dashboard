@@ -19,7 +19,7 @@ import { calculateHealthScore, type HealthScoringInput } from '../lib/health-sco
 import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings.js';
 import { generateAlerts } from '../lib/alerts.js';
 import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api.js';
-import { resolveTenantName } from '../lib/tenant-names.js';
+import { resolveTenantName, TENANT_NAMES } from '../lib/tenant-names.js';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
@@ -113,27 +113,57 @@ export default async function handler(
     const stripeDataMap = new Map<string, StripeEnrichedMetrics>();
     
     if (stripeEnabled && stripeKey) {
-      // Fetch Stripe data for accounts with email addresses
-      // Limit to 50 accounts max to avoid rate limits (Stripe allows 100 req/sec)
-      const accountsWithEmail = tenantData
-        .filter(t => t.email)
-        .slice(0, 50);
+      // Build list of accounts with Stripe lookup info
+      // Priority: 1) TENANT_NAMES stripeEmail/stripeCustomerId, 2) extracted email, 3) domain
+      const accountsForStripeLookup = tenantData
+        .map(t => {
+          const tenantNameInfo = TENANT_NAMES[t.tenantId];
+          return {
+            tenantId: t.tenantId,
+            // Use TENANT_NAMES stripeEmail first, then extracted email
+            email: tenantNameInfo?.stripeEmail || t.email,
+            // Use TENANT_NAMES stripeCustomerId if available
+            customerId: tenantNameInfo?.stripeCustomerId,
+            // Use domain for fallback search
+            domain: tenantNameInfo?.domain || (t.email ? t.email.split('@')[1] : undefined),
+          };
+        })
+        .filter(t => t.email || t.customerId || t.domain)
+        .slice(0, 50); // Limit to 50 accounts max to avoid rate limits
       
       // Batch fetch with small delays to be safe with rate limits
       const batchSize = 10;
-      for (let i = 0; i < accountsWithEmail.length; i += batchSize) {
-        const batch = accountsWithEmail.slice(i, i + batchSize);
+      for (let i = 0; i < accountsForStripeLookup.length; i += batchSize) {
+        const batch = accountsForStripeLookup.slice(i, i + batchSize);
         
         const batchResults = await Promise.all(
           batch.map(async (t) => {
             try {
-              const stripeData = await getStripeEnrichedMetrics(
-                { email: t.email },
+              // First try with email/customerId
+              let stripeData = await getStripeEnrichedMetrics(
+                { 
+                  email: t.email,
+                  customerId: t.customerId,
+                },
                 stripeKey
               );
+              
+              // If not found and we have a domain, try domain search
+              if (!stripeData.found && t.domain) {
+                const { fetchCustomerByDomain } = await import('../lib/stripe-api.js');
+                const domainCustomer = await fetchCustomerByDomain(t.domain, stripeKey);
+                
+                if (domainCustomer) {
+                  stripeData = await getStripeEnrichedMetrics(
+                    { customerId: domainCustomer.id },
+                    stripeKey
+                  );
+                }
+              }
+              
               return { tenantId: t.tenantId, stripeData };
             } catch (error) {
-              console.warn(`Failed to fetch Stripe data for ${t.email}:`, error);
+              console.warn(`Failed to fetch Stripe data for ${t.email || t.domain}:`, error);
               return { tenantId: t.tenantId, stripeData: null };
             }
           })
@@ -146,7 +176,7 @@ export default async function handler(
         }
         
         // Small delay between batches to respect rate limits
-        if (i + batchSize < accountsWithEmail.length) {
+        if (i + batchSize < accountsForStripeLookup.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }

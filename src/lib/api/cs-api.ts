@@ -36,14 +36,24 @@ export interface PortfolioResponse {
   cacheAge?: number;
   totalAccounts: number;
   excludedAccounts?: number;
+  stripeEnriched?: boolean;
+  stripeAccountsEnriched?: number;
 }
 
 /**
  * Fetch the portfolio of customer accounts.
  * Returns lightweight summaries optimized for list views.
+ * 
+ * @param includeStripe - Whether to enrich with Stripe commercial data (default: true)
  */
-export async function fetchPortfolio(): Promise<PortfolioResponse> {
-  const response = await fetch(`${API_BASE}/portfolio`, {
+export async function fetchPortfolio(includeStripe: boolean = true): Promise<PortfolioResponse> {
+  const params = new URLSearchParams();
+  if (includeStripe) {
+    params.append('includeStripe', 'true');
+  }
+  
+  const url = `${API_BASE}/portfolio${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(url, {
     method: 'GET',
     headers: createHeaders(),
   });
