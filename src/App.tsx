@@ -217,7 +217,15 @@ function App() {
           </thead>
           <tbody>
             {filteredMetrics.map((customer) => (
-              <tr key={customer.tenantId} className="customer-row">
+              <tr 
+                key={customer.tenantId} 
+                className="customer-row clickable-row"
+                onClick={(e) => {
+                  // Don't navigate if clicking on editable name input
+                  if ((e.target as HTMLElement).tagName === 'INPUT') return;
+                  window.location.href = `/customer/${customer.tenantId}`;
+                }}
+              >
                 <td>
                   <div className="customer-cell">
                     <EditableName 
@@ -225,7 +233,7 @@ function App() {
                       displayName={customer.displayName}
                       onSave={() => queryClient.invalidateQueries({ queryKey: ['customerMetrics'] })}
                     />
-                    <Link to={`/customer/${customer.tenantId}`} className="customer-link">
+                    <Link to={`/customer/${customer.tenantId}`} className="customer-link" onClick={(e) => e.stopPropagation()}>
                       <div className="customer-id">
                         {customer.tier && <span className={`tier-badge ${customer.tier}`}>{customer.tier}</span>}
                         {customer.accountAgeDays}d old

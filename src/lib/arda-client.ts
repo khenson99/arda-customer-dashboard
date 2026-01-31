@@ -300,7 +300,7 @@ function extractEmailInfo(tenantName: string): { email: string; domain: string }
 }
 
 // Derive company name from domain
-function domainToCompanyName(domain: string): string {
+export function domainToCompanyName(domain: string): string {
   // Remove common TLDs and format nicely
   const name = domain
     .replace(/\.(com|net|org|io|co|cards)$/, '')

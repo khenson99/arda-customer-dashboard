@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { fetchCustomerDetails, CustomerDetails, saveInteraction, getStoredInteractions, Interaction } from '../lib/arda-client';
 import { resolveTenantName, getTenantInfo } from '../lib/tenant-names';
+import { EditableName } from './EditableName';
 
 export function CustomerDetail() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -78,7 +79,13 @@ export function CustomerDetail() {
     <div className="customer-detail">
       <header className="detail-header">
         <Link to="/" className="back-link">← Back to Dashboard</Link>
-        <h1>{resolveTenantName(tenantId!) || customer.companyName}</h1>
+        <div className="detail-header-title">
+          <EditableName 
+            tenantId={tenantId!}
+            displayName={resolveTenantName(tenantId!) || customer.companyName}
+            onSave={() => queryClient.invalidateQueries({ queryKey: ['customerDetails', tenantId] })}
+          />
+        </div>
         <p className="tenant-info">
           <span className={`stage-badge ${customer.stage}`}>{customer.stage}</span>
           {getTenantInfo(tenantId!)?.tier && (
