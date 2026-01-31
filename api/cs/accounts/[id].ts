@@ -561,6 +561,37 @@ async function fetchStripeDataForAccount(
   }
 }
 
+/**
+ * Attempt to fetch HubSpot data for an account
+ * Returns undefined if HubSpot is not configured or company not found
+ */
+async function fetchHubSpotDataForAccount(
+  domain?: string,
+  companyName?: string
+): Promise<HubSpotEnrichedData | undefined> {
+  if (!isHubSpotConfigured()) {
+    // HubSpot not configured - fail gracefully
+    return undefined;
+  }
+  
+  if (!domain && !companyName) {
+    return undefined;
+  }
+  
+  try {
+    const hubspotData = await enrichAccountFromHubSpot(
+      domain || '',
+      companyName
+    );
+    
+    return hubspotData.found ? hubspotData : undefined;
+  } catch (error) {
+    // Log but don't fail the request
+    console.warn('Failed to fetch HubSpot data:', error);
+    return undefined;
+  }
+}
+
 function buildSupportMetrics(): SupportMetrics {
   // This would be enriched with Zendesk/Intercom data in production
   return {
