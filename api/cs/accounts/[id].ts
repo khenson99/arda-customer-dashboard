@@ -25,13 +25,12 @@ import {
   fetchKanbanCards,
   fetchOrders,
   extractEmailInfo,
-  domainToCompanyName,
-  PUBLIC_DOMAINS,
   type ArdaTenant,
   type ArdaItem,
   type ArdaKanbanCard,
   type ArdaOrder,
 } from '../../lib/arda-api';
+import { resolveTenantName } from '../../lib/tenant-names';
 import { calculateHealthScore, type HealthScoringInput } from '../../lib/health-scoring';
 import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mappings';
 import { generateAlerts } from '../../lib/alerts';
@@ -714,17 +713,9 @@ function buildStakeholders(
 }
 
 function deriveAccountName(tenantId: string, tenantInfo?: ArdaTenant): string {
-  if (!tenantInfo) {
-    return `Org ${tenantId.slice(0, 8)}`;
-  }
-  
-  const emailInfo = extractEmailInfo(tenantInfo.payload.tenantName);
-  if (emailInfo) {
-    if (PUBLIC_DOMAINS.includes(emailInfo.domain)) {
-      return emailInfo.email;
-    }
-    return domainToCompanyName(emailInfo.domain);
-  }
-  
-  return tenantInfo.payload.company?.name || `Org ${tenantId.slice(0, 8)}`;
+  return resolveTenantName(
+    tenantId,
+    tenantInfo?.payload.tenantName,
+    tenantInfo?.payload.company?.name
+  );
 }

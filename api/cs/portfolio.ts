@@ -12,15 +12,13 @@ import type { AccountSummary, LifecycleStage, OnboardingStatus } from '../../src
 import { 
   aggregateByTenant, 
   fetchTenants,
-  extractEmailInfo,
-  domainToCompanyName,
-  PUBLIC_DOMAINS,
   type ArdaTenant,
 } from '../lib/arda-api';
 import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring';
 import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings';
 import { generateAlerts } from '../lib/alerts';
 import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api';
+import { resolveTenantName } from '../lib/tenant-names';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
@@ -412,17 +410,9 @@ function buildActivityTrend(timestamps: number[]): number[] {
 }
 
 function deriveAccountName(tenantId: string, tenantInfo?: ArdaTenant): string {
-  if (!tenantInfo) {
-    return `Org ${tenantId.slice(0, 8)}`;
-  }
-  
-  const emailInfo = extractEmailInfo(tenantInfo.payload.tenantName);
-  if (emailInfo) {
-    if (PUBLIC_DOMAINS.includes(emailInfo.domain)) {
-      return emailInfo.email;
-    }
-    return domainToCompanyName(emailInfo.domain);
-  }
-  
-  return tenantInfo.payload.company?.name || `Org ${tenantId.slice(0, 8)}`;
+  return resolveTenantName(
+    tenantId,
+    tenantInfo?.payload.tenantName,
+    tenantInfo?.payload.company?.name
+  );
 }
