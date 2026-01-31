@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
-const REQUIRED_ENV = ['VITE_ARDA_API_KEY', 'VITE_API_BASE'];
+// Only guard for client‑side configuration that cannot fall back at runtime.
+// API keys should be provided at runtime (e.g., localStorage) to avoid bundling secrets.
+const REQUIRED_ENV: string[] = [];
 
 export function EnvGuard() {
   const [missing, setMissing] = useState<string[]>([]);

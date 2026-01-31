@@ -13,11 +13,12 @@ const API_BASE = '/api/cs';
 
 // Get API key from environment or localStorage
 const getApiKey = (): string => {
-  return import.meta.env.VITE_ARDA_API_KEY || localStorage.getItem('arda_api_key') || '';
+  // Avoid bundling secrets; rely on runtime-provided key if needed
+  return localStorage.getItem('arda_api_key') || '';
 };
 
 const getAuthor = (): string => {
-  return import.meta.env.VITE_ARDA_AUTHOR || localStorage.getItem('arda_author') || 'dashboard@arda.cards';
+  return localStorage.getItem('arda_author') || 'dashboard@arda.cards';
 };
 
 // Common headers for API requests

@@ -56,6 +56,6 @@ describe('TabNavigation', () => {
     const { container } = renderWithRouter(<TabNavigation />);
     
     expect(container.querySelector('.tab-navigation')).toBeInTheDocument();
-    expect(container.querySelectorAll('.tab-link').length).toBe(5);
+    expect(container.querySelectorAll('.tab-link').length).toBe(6);
   });
 });

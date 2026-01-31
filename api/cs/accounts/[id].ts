@@ -30,12 +30,12 @@ import {
   type ArdaItem,
   type ArdaKanbanCard,
   type ArdaOrder,
-} from '../../lib/arda-api.js';
-import { resolveTenantName } from '../../lib/tenant-names.js';
-import { calculateHealthScore, type HealthScoringInput } from '../../lib/health-scoring.js';
-import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mappings.js';
-import { generateAlerts } from '../../lib/alerts.js';
-import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../lib/stripe-api.js';
+} from '../../../server/lib/arda-api.js';
+import { resolveTenantName } from '../../../server/lib/tenant-names.js';
+import { calculateHealthScore, type HealthScoringInput } from '../../../server/lib/health-scoring.js';
+import { buildAccountMappings, fetchCodaOverrides } from '../../../server/lib/account-mappings.js';
+import { generateAlerts } from '../../../server/lib/alerts.js';
+import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../../server/lib/stripe-api.js';
 import {
   buildHubSpotUrl,
   enrichAccountFromHubSpot,
@@ -218,7 +218,7 @@ export default async function handler(
     const emailInfo2 = extractEmailInfo(tenantInfo.payload.tenantName);
     
     // Get tenant-specific Stripe info from TENANT_NAMES
-    const { TENANT_NAMES } = await import('../../lib/tenant-names.js');
+    const { TENANT_NAMES } = await import('../../../server/lib/tenant-names.js');
     const tenantNameInfo = TENANT_NAMES[tenantId];
     
     // Priority: 1) TENANT_NAMES stripeEmail, 2) extracted email from tenant name
@@ -662,7 +662,7 @@ async function fetchStripeDataForAccount(
     if (!stripeData.found && domain) {
       console.log('[Stripe Debug] Trying domain-based search for:', domain);
       
-      const { fetchCustomerByDomain } = await import('../../lib/stripe-api.js');
+      const { fetchCustomerByDomain } = await import('../../../server/lib/stripe-api.js');
       const domainCustomer = await fetchCustomerByDomain(domain, stripeKey, {
         preferredName,
         preferredEmail: email,

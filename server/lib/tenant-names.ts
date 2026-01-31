@@ -32,7 +32,7 @@ export const TENANT_NAMES: Record<string, TenantInfo> = {
     csm: 'Customer Success',
     tier: 'growth',
     segment: 'mid_market',
-    domain: 'elliottequipment.com',
+    domain: 'elliottequip.com',
   },
   // Trace Audio (ben@traceaudio.com tenant)
   '75980a19-64ec-4f1a-a2ea-0446ea937b16': {
@@ -48,14 +48,14 @@ export const TENANT_NAMES: Record<string, TenantInfo> = {
     name: 'US Offsite',
     tier: 'enterprise',
     segment: 'enterprise',
-    domain: 'usoffsite.com',
+    domain: 'us-offsite.com',
   },
   // US Offsite (secondary tenant)
   'fbc86cb5-afdd-4abf-a225-49cd2a42eb20': {
     name: 'US Offsite',
     tier: 'enterprise',
     segment: 'enterprise',
-    domain: 'usoffsite.com',
+    domain: 'us-offsite.com',
   },
   // Shoptool Co
   '73951365-1cbe-46ac-9b80-6ac44982983b': {

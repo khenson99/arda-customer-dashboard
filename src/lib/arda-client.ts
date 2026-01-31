@@ -4,7 +4,7 @@
 
 import { resolveTenantName, getTenantInfo, TENANT_NAMES } from './tenant-names';
 import { getCustomerOverrides, type CustomerOverride } from './coda-client';
-const BASE_URL = import.meta.env.VITE_API_BASE || '/api';
+const BASE_URL = '/api';
 
 // Get API key from environment or localStorage
 const getApiKey = () => {
@@ -12,7 +12,7 @@ const getApiKey = () => {
 };
 
 const getAuthor = () => {
-  return import.meta.env.VITE_ARDA_AUTHOR || localStorage.getItem('arda_author') || 'kyle@arda.cards';
+  return localStorage.getItem('arda_author') || 'dashboard@arda.cards';
 };
 
 interface QueryOptions {
@@ -21,18 +21,18 @@ interface QueryOptions {
   paginate?: { index: number; size: number };
 }
 
-const createHeaders = () => ({
-  ...(() => {
-    const key = getApiKey();
-    if (!key && import.meta.env.PROD) {
-      throw new Error('Missing VITE_ARDA_API_KEY');
-    }
-    return { Authorization: `Bearer ${key}` };
-  })(),
-  'X-Author': getAuthor(),
-  'X-Request-ID': crypto.randomUUID(),
-  'Content-Type': 'application/json',
-});
+const createHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'X-Author': getAuthor(),
+    'X-Request-ID': crypto.randomUUID(),
+    'Content-Type': 'application/json',
+  };
+  const key = getApiKey();
+  if (key) {
+    headers['Authorization'] = `Bearer ${key}`;
+  }
+  return headers;
+};
 
 // Generic query function (single page)
 async function queryEntity<T>(

@@ -10,20 +10,9 @@ import type { AccountSummary, AccountDetail, Alert, Interaction, InteractionType
 // API base URL - uses relative path in production, configurable in dev
 const API_BASE = '/api/cs';
 
-// Get API key from environment or localStorage
-const getApiKey = (): string => {
-  return import.meta.env.VITE_ARDA_API_KEY || localStorage.getItem('arda_api_key') || '';
-};
-
-const getAuthor = (): string => {
-  return import.meta.env.VITE_ARDA_AUTHOR || localStorage.getItem('arda_author') || 'dashboard@arda.cards';
-};
-
 // Common headers for API requests
 const createHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
-  'X-Arda-API-Key': getApiKey(),
-  'X-Arda-Author': getAuthor(),
 });
 
 // ============================================================================

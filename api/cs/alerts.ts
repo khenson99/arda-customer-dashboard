@@ -14,11 +14,12 @@ import {
   fetchTenants,
   extractEmailInfo,
   type ArdaTenant,
-} from '../lib/arda-api.js';
-import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring.js';
-import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings.js';
-import { generateAlerts } from '../lib/alerts.js';
-import { resolveTenantName } from '../lib/tenant-names.js';
+} from '../../server/lib/arda-api.js';
+import { calculateHealthScore, type HealthScoringInput } from '../../server/lib/health-scoring.js';
+import { buildAccountMappings, fetchCodaOverrides } from '../../server/lib/account-mappings.js';
+import { generateAlerts } from '../../server/lib/alerts.js';
+import { resolveTenantName } from '../../server/lib/tenant-names.js';
+import { getSupabaseServerClient } from '../../server/lib/supabase-server.js';
 
 // ============================================================================
 // Types
@@ -26,6 +27,11 @@ import { resolveTenantName } from '../lib/tenant-names.js';
 
 interface AlertWithAccount extends Alert {
   accountName: string;
+  acknowledgedBy?: string;
+  snoozedUntil?: string;
+  snoozeReason?: string;
+  resolvedBy?: string;
+  notes?: AlertNote[];
 }
 
 interface AlertsResponse {
@@ -69,9 +75,9 @@ interface AlertUpdateResponse {
   note?: AlertNote;
 }
 
-// Extended alert type for stored updates (includes fields not in base Alert)
+// Persisted alert updates will be stored in Supabase when available.
+// Fallback to in-memory map if Supabase isn't configured (development only).
 interface StoredAlertUpdate {
-  // Fields from Alert that can be updated
   status?: AlertStatus;
   acknowledgedAt?: string;
   resolvedAt?: string;
@@ -79,7 +85,6 @@ interface StoredAlertUpdate {
   ownerId?: string;
   ownerName?: string;
   slaStatus?: SLAStatus;
-  // Additional fields stored with updates
   acknowledgedBy?: string;
   snoozedUntil?: string;
   snoozeReason?: string;
@@ -87,8 +92,7 @@ interface StoredAlertUpdate {
   notes?: AlertNote[];
 }
 
-// In-memory storage for alert updates (would be database in production)
-const alertUpdates = new Map<string, StoredAlertUpdate>();
+const inMemoryAlertUpdates = new Map<string, StoredAlertUpdate>();
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
@@ -98,6 +102,92 @@ interface CacheEntry {
 
 let alertsCache: CacheEntry | null = null;
 const CACHE_TTL_MS = 60 * 1000; // 1 minute (shorter than portfolio since alerts are more dynamic)
+
+// ============================================================================
+// Persistence helpers (Supabase first, in-memory fallback)
+// ============================================================================
+
+async function loadAlertUpdates(alertIds: string[]): Promise<Map<string, StoredAlertUpdate>> {
+  const client = getSupabaseServerClient();
+  if (!client) {
+    return new Map(inMemoryAlertUpdates);
+  }
+
+  const { data, error } = await client
+    .from('alert_states')
+    .select('*')
+    .in('alert_id', alertIds);
+
+  if (error || !data) {
+    console.warn('Failed to load alert updates from Supabase, falling back to memory:', error?.message);
+    return new Map(inMemoryAlertUpdates);
+  }
+
+  const map = new Map<string, StoredAlertUpdate>();
+  data.forEach((row: any) => {
+    map.set(row.alert_id, {
+      status: row.status as AlertStatus,
+      acknowledgedAt: row.acknowledged_at,
+      acknowledgedBy: row.acknowledged_by,
+      snoozedUntil: row.snoozed_until,
+      snoozeReason: row.snooze_reason,
+      resolvedAt: row.resolved_at,
+      resolvedBy: row.resolved_by,
+      outcome: row.outcome as AlertOutcome,
+      ownerId: row.owner_id,
+      ownerName: row.owner_name,
+      slaStatus: row.sla_status as SLAStatus,
+      notes: row.notes || undefined,
+    });
+  });
+
+  return map;
+}
+
+async function persistAlertUpdate(
+  alertId: string,
+  accountId: string | undefined,
+  update: StoredAlertUpdate
+): Promise<void> {
+  const client = getSupabaseServerClient();
+  if (!client) {
+    inMemoryAlertUpdates.set(alertId, {
+      ...(inMemoryAlertUpdates.get(alertId) || {}),
+      ...update,
+    });
+    return;
+  }
+
+  const payload: Record<string, unknown> = {
+    alert_id: alertId,
+    account_id: accountId,
+    status: update.status,
+    acknowledged_at: update.acknowledgedAt,
+    acknowledged_by: update.acknowledgedBy,
+    snoozed_until: update.snoozedUntil,
+    snooze_reason: update.snoozeReason,
+    resolved_at: update.resolvedAt,
+    resolved_by: update.resolvedBy,
+    outcome: update.outcome,
+    owner_id: update.ownerId,
+    owner_name: update.ownerName,
+    sla_status: update.slaStatus,
+    notes: update.notes,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await client
+    .from('alert_states')
+    .upsert(payload, { onConflict: 'alert_id' });
+
+  if (error) {
+    console.error('Failed to persist alert update to Supabase, caching in memory:', error.message);
+    inMemoryAlertUpdates.set(alertId, {
+      ...(inMemoryAlertUpdates.get(alertId) || {}),
+      ...update,
+    });
+  }
+}
 
 // ============================================================================
 // Handler
@@ -294,14 +384,36 @@ export default async function handler(
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
       
+      // Apply persisted alert state (Supabase or in-memory)
+      const persisted = await loadAlertUpdates(allAlerts.map(a => a.id));
+      const mergedAlerts = allAlerts.map(alert => {
+        const update = persisted.get(alert.id);
+        if (!update) return alert;
+        return {
+          ...alert,
+          status: update.status || alert.status,
+          acknowledgedAt: update.acknowledgedAt || alert.acknowledgedAt,
+          acknowledgedBy: update.acknowledgedBy || alert.acknowledgedBy,
+          snoozedUntil: update.snoozedUntil || alert.snoozedUntil,
+          snoozeReason: update.snoozeReason || alert.snoozeReason,
+          resolvedAt: update.resolvedAt || alert.resolvedAt,
+          resolvedBy: update.resolvedBy || alert.resolvedBy,
+          outcome: update.outcome || alert.outcome,
+          ownerId: update.ownerId || alert.ownerId,
+          ownerName: update.ownerName || alert.ownerName,
+          slaStatus: update.slaStatus || alert.slaStatus,
+          notes: update.notes || alert.notes,
+        };
+      });
+
       // Build response
       baseResponse = {
-        alerts: allAlerts,
-        totalCount: allAlerts.length,
-        criticalCount: allAlerts.filter(a => a.severity === 'critical').length,
-        highCount: allAlerts.filter(a => a.severity === 'high').length,
-        mediumCount: allAlerts.filter(a => a.severity === 'medium').length,
-        lowCount: allAlerts.filter(a => a.severity === 'low').length,
+        alerts: mergedAlerts,
+        totalCount: mergedAlerts.length,
+        criticalCount: mergedAlerts.filter(a => a.severity === 'critical').length,
+        highCount: mergedAlerts.filter(a => a.severity === 'high').length,
+        mediumCount: mergedAlerts.filter(a => a.severity === 'medium').length,
+        lowCount: mergedAlerts.filter(a => a.severity === 'low').length,
       };
       
       // Update cache
@@ -380,8 +492,8 @@ async function handlePatchAlert(
     const updateData = req.body as AlertUpdateRequest;
     const updatedFields: string[] = [];
     
-    // Get existing updates or create new
-    const existing = alertUpdates.get(alertId) || { notes: [] };
+    // Get existing updates or create new (pull from in-memory cache first; Supabase fetch happens lazily on GET)
+    const existing = inMemoryAlertUpdates.get(alertId) || { notes: [] };
     
     // Apply updates
     if (updateData.status) {
@@ -447,8 +559,8 @@ async function handlePatchAlert(
       updatedFields.push('notes');
     }
     
-    // Save updates
-    alertUpdates.set(alertId, existing);
+    // Persist updates
+    await persistAlertUpdate(alertId, req.body?.accountId, existing);
     
     const response: AlertUpdateResponse = {
       success: true,

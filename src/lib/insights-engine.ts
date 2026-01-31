@@ -8,9 +8,6 @@
 import type {
   AccountDetail,
   AccountSummary,
-  HealthTrend,
-  HealthGrade,
-  Alert,
 } from './types/account';
 
 // ============================================================================

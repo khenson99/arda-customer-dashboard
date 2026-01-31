@@ -9,8 +9,6 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   getSupabaseClient,
   isSupabaseConfigured,
-  type InteractionRow,
-  type InteractionInsert,
   type TaskRow,
   type TaskInsert,
   type TaskUpdate,
@@ -25,6 +23,8 @@ import {
 } from '../lib/supabase-client';
 import type { Interaction, StoredTask } from '../lib/arda-client';
 import type { SuccessPlan, Goal, Milestone } from '../lib/types/account';
+
+const API_BASE = '/api/cs/accounts';
 
 // ============================================================================
 // SHARED UTILITIES
@@ -85,7 +85,7 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
     }
   }, [accountId]);
 
-  // Fetch interactions
+  // Fetch interactions (server-first, local fallback)
   const fetchInteractions = useCallback(async () => {
     if (!accountId) {
       setState({ data: [], isLoading: false, error: null, isFromCache: false });
@@ -94,42 +94,14 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
 
     setState(prev => ({ ...prev, isLoading: true }));
 
-    const client = getSupabaseClient();
-    
-    if (!client || !isSupabaseConfigured()) {
-      // Use localStorage fallback
-      const localData = loadFromLocalStorage();
-      setState({
-        data: localData,
-        isLoading: false,
-        error: null,
-        isFromCache: true,
-      });
-      return;
-    }
-
     try {
-      const { data, error } = await client
-        .from('interactions')
-        .select('*')
-        .eq('account_id', accountId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Map database rows to Interaction type
-      const interactions: Interaction[] = (data || []).map((row: InteractionRow) => ({
-        id: row.id,
-        date: row.created_at,
-        type: row.type as Interaction['type'],
-        summary: row.summary,
-        nextAction: row.next_action || undefined,
-        createdBy: row.created_by,
-      }));
-
-      // Also sync to localStorage for offline access
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/interactions`, {
+        method: 'GET',
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const interactions: Interaction[] = json.interactions ?? [];
       saveToLocalStorage(interactions);
-
       setState({
         data: interactions,
         isLoading: false,
@@ -137,8 +109,7 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
         isFromCache: false,
       });
     } catch (error) {
-      console.error('Failed to fetch interactions from Supabase:', error);
-      // Fall back to localStorage
+      console.error('Failed to fetch interactions from API, using local cache:', error);
       const localData = loadFromLocalStorage();
       setState({
         data: localData,
@@ -159,43 +130,15 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
       id: newId,
     };
 
-    const client = getSupabaseClient();
-
-    if (!client || !isSupabaseConfigured()) {
-      // Use localStorage only
-      const current = loadFromLocalStorage();
-      const updated = [newInteraction, ...current];
-      saveToLocalStorage(updated);
-      setState(prev => ({ ...prev, data: updated }));
-      return;
-    }
-
     try {
-      const insertData: InteractionInsert = {
-        account_id: accountId,
-        type: interaction.type,
-        summary: interaction.summary,
-        next_action: interaction.nextAction || null,
-        created_by: interaction.createdBy,
-        created_at: interaction.date,
-      };
-
-      const { data, error } = await client
-        .from('interactions')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const savedInteraction: Interaction = {
-        id: data.id,
-        date: data.created_at,
-        type: data.type as Interaction['type'],
-        summary: data.summary,
-        nextAction: data.next_action || undefined,
-        createdBy: data.created_by,
-      };
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/interactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(interaction),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const savedInteraction: Interaction = json.interaction ?? newInteraction;
 
       setState(prev => {
         const updated = [savedInteraction, ...prev.data];
@@ -203,8 +146,7 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
         return { ...prev, data: updated };
       });
     } catch (error) {
-      console.error('Failed to add interaction to Supabase:', error);
-      // Fall back to localStorage
+      console.error('Failed to add interaction via API, caching locally:', error);
       const current = loadFromLocalStorage();
       const updated = [newInteraction, ...current];
       saveToLocalStorage(updated);
@@ -216,24 +158,11 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
   const deleteInteraction = useCallback(async (interactionId: string) => {
     if (!accountId) return;
 
-    const client = getSupabaseClient();
-
-    if (!client || !isSupabaseConfigured()) {
-      // Use localStorage only
-      const current = loadFromLocalStorage();
-      const updated = current.filter(i => i.id !== interactionId);
-      saveToLocalStorage(updated);
-      setState(prev => ({ ...prev, data: updated }));
-      return;
-    }
-
     try {
-      const { error } = await client
-        .from('interactions')
-        .delete()
-        .eq('id', interactionId);
-
-      if (error) throw error;
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/interactions?interactionId=${encodeURIComponent(interactionId)}`, {
+        method: 'DELETE',
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       setState(prev => {
         const updated = prev.data.filter(i => i.id !== interactionId);
@@ -241,8 +170,7 @@ export function useInteractions(accountId: string | undefined): UseInteractionsR
         return { ...prev, data: updated };
       });
     } catch (error) {
-      console.error('Failed to delete interaction from Supabase:', error);
-      // Still remove from local state
+      console.error('Failed to delete interaction via API, updating local cache:', error);
       const current = loadFromLocalStorage();
       const updated = current.filter(i => i.id !== interactionId);
       saveToLocalStorage(updated);
@@ -329,7 +257,7 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
     updatedAt: row.created_at,
   });
 
-  // Fetch tasks
+  // Fetch tasks (server-first, local fallback)
   const fetchTasks = useCallback(async () => {
     if (!accountId) {
       setState({ data: [], isLoading: false, error: null, isFromCache: false });
@@ -338,31 +266,25 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
 
     setState(prev => ({ ...prev, isLoading: true }));
 
-    const client = getSupabaseClient();
-    
-    if (!client || !isSupabaseConfigured()) {
-      const localData = loadFromLocalStorage();
-      setState({
-        data: localData,
-        isLoading: false,
-        error: null,
-        isFromCache: true,
-      });
-      return;
-    }
-
     try {
-      const { data, error } = await client
-        .from('tasks')
-        .select('*')
-        .eq('account_id', accountId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const tasks = (data || []).map(mapRowToTask);
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/tasks`, { method: 'GET' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const tasks: StoredTask[] = (json.tasks || []).map((t: any) => ({
+        id: t.id,
+        accountId: t.accountId,
+        title: t.title,
+        description: t.description,
+        type: t.type || 'custom',
+        priority: t.priority,
+        status: t.status,
+        dueDate: t.dueDate,
+        completedAt: t.completedAt,
+        source: t.source || 'manual',
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+      }));
       saveToLocalStorage(tasks);
-
       setState({
         data: tasks,
         isLoading: false,
@@ -370,7 +292,7 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
         isFromCache: false,
       });
     } catch (error) {
-      console.error('Failed to fetch tasks from Supabase:', error);
+      console.error('Failed to fetch tasks from API, using local cache:', error);
       const localData = loadFromLocalStorage();
       setState({
         data: localData,
@@ -394,42 +316,37 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
       updatedAt: now,
     };
 
-    const client = getSupabaseClient();
-
-    if (!client || !isSupabaseConfigured()) {
-      const current = loadFromLocalStorage();
-      const updated = [newTask, ...current];
-      saveToLocalStorage(updated);
-      setState(prev => ({ ...prev, data: updated }));
-      return;
-    }
-
     try {
-      const insertData: TaskInsert = {
-        account_id: accountId,
-        title: task.title,
-        description: task.description || null,
-        priority: task.priority,
-        status: task.status || 'pending',
-        due_date: task.dueDate || null,
-      };
-
-      const { data, error } = await client
-        .from('tasks')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const savedTask = mapRowToTask(data);
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(task),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const savedTask: StoredTask = json.task
+        ? {
+            id: json.task.id,
+            accountId: json.task.accountId,
+            title: json.task.title,
+            description: json.task.description,
+            type: 'custom',
+            priority: json.task.priority,
+            status: json.task.status,
+            dueDate: json.task.dueDate,
+            completedAt: json.task.completedAt,
+            source: json.task.source || 'manual',
+            createdAt: json.task.createdAt,
+            updatedAt: json.task.updatedAt,
+          }
+        : newTask;
       setState(prev => {
         const updated = [savedTask, ...prev.data];
         saveToLocalStorage(updated);
         return { ...prev, data: updated };
       });
     } catch (error) {
-      console.error('Failed to add task to Supabase:', error);
+      console.error('Failed to add task via API, caching locally:', error);
       const current = loadFromLocalStorage();
       const updated = [newTask, ...current];
       saveToLocalStorage(updated);
@@ -441,43 +358,42 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
   const updateTask = useCallback(async (taskId: string, updates: Partial<StoredTask>) => {
     if (!accountId) return;
 
-    const client = getSupabaseClient();
-
-    if (!client || !isSupabaseConfigured()) {
-      const current = loadFromLocalStorage();
-      const updated = current.map(t => 
-        t.id === taskId ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
-      );
-      saveToLocalStorage(updated);
-      setState(prev => ({ ...prev, data: updated }));
-      return;
-    }
-
     try {
-      const updateData: TaskUpdate = {};
-      if (updates.title !== undefined) updateData.title = updates.title;
-      if (updates.description !== undefined) updateData.description = updates.description;
-      if (updates.priority !== undefined) updateData.priority = updates.priority;
-      if (updates.status !== undefined) updateData.status = updates.status;
-      if (updates.dueDate !== undefined) updateData.due_date = updates.dueDate;
-      if (updates.completedAt !== undefined) updateData.completed_at = updates.completedAt;
-
-      const { error } = await client
-        .from('tasks')
-        .update(updateData)
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/tasks`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, ...updates }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const savedTask: StoredTask | null = json.task
+        ? {
+            id: json.task.id,
+            accountId: json.task.accountId,
+            title: json.task.title,
+            description: json.task.description,
+            type: 'custom',
+            priority: json.task.priority,
+            status: json.task.status,
+            dueDate: json.task.dueDate,
+            completedAt: json.task.completedAt,
+            source: json.task.source || 'manual',
+            createdAt: json.task.createdAt,
+            updatedAt: json.task.updatedAt,
+          }
+        : null;
 
       setState(prev => {
         const updated = prev.data.map(t => 
-          t.id === taskId ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
+          t.id === taskId
+            ? { ...t, ...(savedTask || updates), updatedAt: new Date().toISOString() }
+            : t
         );
         saveToLocalStorage(updated);
         return { ...prev, data: updated };
       });
     } catch (error) {
-      console.error('Failed to update task in Supabase:', error);
+      console.error('Failed to update task via API, updating local cache:', error);
       const current = loadFromLocalStorage();
       const updated = current.map(t => 
         t.id === taskId ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
@@ -491,23 +407,11 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
   const deleteTask = useCallback(async (taskId: string) => {
     if (!accountId) return;
 
-    const client = getSupabaseClient();
-
-    if (!client || !isSupabaseConfigured()) {
-      const current = loadFromLocalStorage();
-      const updated = current.filter(t => t.id !== taskId);
-      saveToLocalStorage(updated);
-      setState(prev => ({ ...prev, data: updated }));
-      return;
-    }
-
     try {
-      const { error } = await client
-        .from('tasks')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const resp = await fetch(`${API_BASE}/${encodeURIComponent(accountId)}/tasks?taskId=${encodeURIComponent(taskId)}`, {
+        method: 'DELETE',
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       setState(prev => {
         const updated = prev.data.filter(t => t.id !== taskId);
@@ -515,7 +419,7 @@ export function useTasks(accountId: string | undefined): UseTasksResult {
         return { ...prev, data: updated };
       });
     } catch (error) {
-      console.error('Failed to delete task from Supabase:', error);
+      console.error('Failed to delete task via API, updating local cache:', error);
       const current = loadFromLocalStorage();
       const updated = current.filter(t => t.id !== taskId);
       saveToLocalStorage(updated);
@@ -1105,7 +1009,7 @@ export function useEmails(accountId: string | undefined): UseEmailsResult {
 
       const { data, error } = await client
         .from('emails')
-        .insert(insertData)
+        .insert(insertData as never)
         .select()
         .single();
 
@@ -1158,7 +1062,7 @@ export function useEmails(accountId: string | undefined): UseEmailsResult {
 
       const { error } = await client
         .from('emails')
-        .update(updateData)
+        .update(updateData as never)
         .eq('id', draftId);
 
       if (error) throw error;
@@ -1422,7 +1326,7 @@ export function useAlertStates(): UseAlertStatesResult {
 
       const { data, error } = await client
         .from('alert_states')
-        .upsert(upsertData, { onConflict: 'alert_id' })
+        .upsert(upsertData as never, { onConflict: 'alert_id' })
         .select()
         .single();
 

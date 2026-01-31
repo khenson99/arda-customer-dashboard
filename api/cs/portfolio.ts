@@ -14,12 +14,12 @@ import {
   fetchTenants,
   extractEmailInfo,
   type ArdaTenant,
-} from '../lib/arda-api.js';
-import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring.js';
-import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings.js';
-import { generateAlerts } from '../lib/alerts.js';
-import { fetchCustomerByDomain, getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api.js';
-import { resolveTenantName, TENANT_NAMES } from '../lib/tenant-names.js';
+} from '../../server/lib/arda-api.js';
+import { calculateHealthScore, type HealthScoringInput } from '../../server/lib/health-scoring.js';
+import { buildAccountMappings, fetchCodaOverrides } from '../../server/lib/account-mappings.js';
+import { generateAlerts } from '../../server/lib/alerts.js';
+import { fetchCustomerByDomain, getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../server/lib/stripe-api.js';
+import { resolveTenantName, TENANT_NAMES } from '../../server/lib/tenant-names.js';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {

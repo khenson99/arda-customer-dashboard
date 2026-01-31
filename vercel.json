@@ -1,16 +1,17 @@
 {
-  "rewrites": [
+  "routes": [
+    { "handle": "filesystem" },
     {
-      "source": "/api/cs/:path*",
-      "destination": "/api/cs/:path*"
+      "src": "/api/cs/accounts/(.*)",
+      "dest": "/api/cs/accounts/[id]?id=$1"
     },
     {
-      "source": "/api/arda/:path*",
-      "destination": "https://prod.alpha001.io.arda.cards/:path*"
+      "src": "/api/arda/(.*)",
+      "dest": "https://prod.alpha001.io.arda.cards/$1"
     },
     {
-      "source": "/api/:path*",
-      "destination": "https://prod.alpha001.io.arda.cards/:path*"
+      "src": "/api/(.*)",
+      "dest": "https://prod.alpha001.io.arda.cards/$1"
     }
   ],
   "functions": {
