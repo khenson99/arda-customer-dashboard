@@ -3,6 +3,7 @@
 // Using /api proxy in dev to avoid CORS
 
 import { resolveTenantName, getTenantInfo, TENANT_NAMES } from './tenant-names';
+import { fetchPortfolio, fetchAlerts } from './api/cs-api';
 import { getCustomerOverrides, type CustomerOverride } from './coda-client';
 const BASE_URL = '/api';
 

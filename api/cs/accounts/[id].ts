@@ -45,11 +45,13 @@ import {
   isHubSpotConfigured,
   type HubSpotEnrichedData,
 } from '../../lib/hubspot-client.js';
+import { requireApiKey } from '../../lib/auth.js';
 
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  if (!requireApiKey(req, res)) return;
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');

@@ -21,8 +21,7 @@ export async function checkApiHealth(): Promise<HealthResult> {
 export function envSummary() {
   return {
     apiBasePresent: Boolean(import.meta.env.VITE_API_BASE),
-    // API key and author are expected to be provided at runtime (e.g., localStorage) to avoid bundling secrets
-    apiKeyPresent: Boolean(localStorage.getItem('arda_api_key')),
-    authorSet: Boolean(localStorage.getItem('arda_author')),
+    apiKeyPresent: Boolean(import.meta.env.VITE_ARDA_API_KEY || localStorage.getItem('arda_api_key')),
+    authorSet: Boolean(import.meta.env.VITE_ARDA_AUTHOR || localStorage.getItem('arda_author')),
   };
 }

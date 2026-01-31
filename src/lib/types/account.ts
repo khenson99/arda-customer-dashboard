@@ -702,6 +702,10 @@ export interface AccountSummary {
   // Usage snapshot
   activeUsers: number;
   daysSinceLastActivity: number;
+  itemCount?: number;
+  kanbanCardCount?: number;
+  orderCount?: number;
+  accountAgeDays?: number;
   
   // Stage
   lifecycleStage: LifecycleStage;

@@ -26,6 +26,7 @@ import type {
 
 // Track whether we should use the new API
 let useNewApi = true;
+const allowLegacyFallback = !import.meta.env.PROD;
 
 /**
  * Generate alerts based on account data.
@@ -283,12 +284,19 @@ async function fetchAccountDetailWithFallback(accountId: string): Promise<Accoun
       const result = await fetchAccountDetail(accountId);
       return result;
     } catch (error) {
+      if (!allowLegacyFallback) {
+        throw error;
+      }
       console.warn('New account detail API failed, falling back to legacy:', error);
       useNewApi = false;
     }
   }
   
-  // Fallback to legacy client-side API
+  if (!allowLegacyFallback) {
+    throw new Error('Account detail API unavailable');
+  }
+
+  // Fallback to legacy client-side API (dev only)
   const legacyDetails = await fetchCustomerDetails(accountId);
   return transformLegacyToDetail(legacyDetails, accountId);
 }

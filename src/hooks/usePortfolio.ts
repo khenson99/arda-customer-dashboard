@@ -17,6 +17,7 @@ import type { AccountSummary } from '../lib/types/account';
 
 // Track whether we should use the new API
 let useNewApi = true;
+const allowLegacyFallback = !import.meta.env.PROD;
 
 /**
  * Transform legacy CustomerMetrics to AccountSummary format.
@@ -51,12 +52,19 @@ async function fetchPortfolioWithFallback(): Promise<PortfolioResponse> {
       const result = await fetchPortfolio();
       return result;
     } catch (error) {
+      if (!allowLegacyFallback) {
+        throw error;
+      }
       console.warn('New portfolio API failed, falling back to legacy:', error);
       useNewApi = false;
     }
   }
   
-  // Fallback to legacy client-side API
+  if (!allowLegacyFallback) {
+    throw new Error('Portfolio API unavailable');
+  }
+
+  // Fallback to legacy client-side API (dev only)
   const legacyMetrics = await fetchCustomerMetrics();
   const accounts = transformLegacyToSummary(legacyMetrics);
   

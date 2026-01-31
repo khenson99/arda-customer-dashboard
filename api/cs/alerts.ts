@@ -20,6 +20,7 @@ import { buildAccountMappings, fetchCodaOverrides } from '../../server/lib/accou
 import { generateAlerts } from '../../server/lib/alerts.js';
 import { resolveTenantName } from '../../server/lib/tenant-names.js';
 import { getSupabaseServerClient } from '../../server/lib/supabase-server.js';
+import { requireApiKey } from '../../server/lib/auth.js';
 
 // ============================================================================
 // Types
@@ -197,6 +198,7 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  if (!requireApiKey(req, res)) return;
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, OPTIONS');

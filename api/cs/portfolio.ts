@@ -20,6 +20,7 @@ import { buildAccountMappings, fetchCodaOverrides } from '../../server/lib/accou
 import { generateAlerts } from '../../server/lib/alerts.js';
 import { fetchCustomerByDomain, getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../server/lib/stripe-api.js';
 import { resolveTenantName, TENANT_NAMES } from '../../server/lib/tenant-names.js';
+import { requireApiKey } from '../../server/lib/auth.js';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
@@ -34,6 +35,7 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  if (!requireApiKey(req, res)) return;
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -341,6 +343,10 @@ export default async function handler(
         healthTrend: health.trend,
         activeUsers: activityData.uniqueAuthors.size,
         daysSinceLastActivity,
+        itemCount: activityData.itemCount,
+        kanbanCardCount: activityData.kanbanCardCount,
+        orderCount: activityData.orderCount,
+        accountAgeDays,
         lifecycleStage,
         onboardingStatus,
         // Include ARR from Stripe if available
