@@ -47,6 +47,7 @@ const INTERACTIONS_CACHE_TTL_MS = LOCAL_CACHE_DEFAULT_TTL_MS;
 const TASKS_CACHE_TTL_MS = LOCAL_CACHE_DEFAULT_TTL_MS;
 const SUCCESS_PLAN_CACHE_TTL_MS = 10 * 60 * 1000;
 const EMAILS_CACHE_TTL_MS = 10 * 60 * 1000;
+const ALERT_STATES_CACHE_TTL_MS = LOCAL_CACHE_DEFAULT_TTL_MS;
 
 function isCacheEnvelope<T>(value: unknown): value is CacheEnvelope<T> {
   if (!value || typeof value !== 'object') return false;
@@ -1296,7 +1297,17 @@ export function useAlertStates(): UseAlertStatesResult {
   const loadFromLocalStorage = useCallback((): Record<string, AlertState> => {
     try {
       const data = localStorage.getItem(ALERT_STATES_STORAGE_KEY);
-      return data ? JSON.parse(data) : {};
+      if (!data) return {};
+      const parsed = JSON.parse(data);
+      const { data: alertStates, isStale } = unwrapCache<Record<string, AlertState>>(
+        parsed,
+        ALERT_STATES_CACHE_TTL_MS
+      );
+      if (isStale) {
+        localStorage.removeItem(ALERT_STATES_STORAGE_KEY);
+        return {};
+      }
+      return alertStates || {};
     } catch {
       return {};
     }
@@ -1305,7 +1316,11 @@ export function useAlertStates(): UseAlertStatesResult {
   // Save to localStorage
   const saveToLocalStorage = useCallback((alertStates: Record<string, AlertState>) => {
     try {
-      localStorage.setItem(ALERT_STATES_STORAGE_KEY, JSON.stringify(alertStates));
+      const envelope: CacheEnvelope<Record<string, AlertState>> = {
+        data: alertStates,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(ALERT_STATES_STORAGE_KEY, JSON.stringify(envelope));
     } catch (error) {
       console.error('Failed to save alert states to localStorage:', error);
     }
