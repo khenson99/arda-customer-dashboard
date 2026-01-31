@@ -36,11 +36,21 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          // Core React bundle
           react: ['react', 'react-dom', 'react-router-dom'],
-          recharts: ['recharts'],
+          // Data fetching layer
+          query: ['@tanstack/react-query'],
+          // Charts (largest dependency)
+          charts: ['recharts'],
         },
       },
     },
-    chunkSizeWarningLimit: 1024,
+    // Reduce warning limit since we've optimized chunks
+    chunkSizeWarningLimit: 512,
+    // Enable source maps for production debugging
+    sourcemap: true,
+    // Minification options
+    minify: 'esbuild',
+    target: 'es2020',
   },
 })

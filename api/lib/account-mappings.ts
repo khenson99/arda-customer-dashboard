@@ -258,6 +258,36 @@ function generateAccountId(name: string): string {
 // Coda Integration (Optional)
 // ============================================================================
 
+// Column name mapping - Coda columns can be accessed by name or c-{columnId}
+const CODA_COLUMN_ALIASES: Record<string, string[]> = {
+  tenantId: ['TenantId', 'c-TenantId', 'Tenant ID', 'tenant_id'],
+  displayName: ['DisplayName', 'c-DisplayName', 'Display Name', 'Name', 'Company Name'],
+  csm: ['CSM', 'c-CSM', 'Owner', 'Account Owner', 'Customer Success Manager'],
+  tier: ['Tier', 'c-Tier', 'Account Tier', 'Plan Tier'],
+  segment: ['Segment', 'c-Segment', 'Account Segment', 'Customer Segment'],
+  notes: ['Notes', 'c-Notes', 'Account Notes', 'Comments'],
+  hubspotId: ['HubSpotId', 'c-HubSpotId', 'HubSpot ID', 'hubspot_id'],
+  stripeId: ['StripeId', 'c-StripeId', 'Stripe ID', 'stripe_id'],
+  domain: ['Domain', 'c-Domain', 'Company Domain', 'Email Domain'],
+  industry: ['Industry', 'c-Industry', 'Vertical'],
+  region: ['Region', 'c-Region', 'Territory', 'Geo'],
+  tags: ['Tags', 'c-Tags', 'Labels'],
+  isExcluded: ['Excluded', 'c-Excluded', 'Is Excluded', 'Exclude'],
+};
+
+/**
+ * Get a value from Coda row values, checking multiple possible column names.
+ */
+function getCodaValue(values: Record<string, unknown>, field: keyof typeof CODA_COLUMN_ALIASES): unknown {
+  const aliases = CODA_COLUMN_ALIASES[field];
+  for (const alias of aliases) {
+    if (values[alias] !== undefined && values[alias] !== null && values[alias] !== '') {
+      return values[alias];
+    }
+  }
+  return undefined;
+}
+
 /**
  * Fetch account overrides from Coda.
  * Falls back gracefully if Coda is not configured or fails.
@@ -291,7 +321,10 @@ export async function fetchCodaOverrides(
     
     const tables = await tablesResponse.json();
     const overridesTable = tables.items?.find(
-      (t: { name: string }) => t.name === 'Customer Overrides'
+      (t: { name: string }) => 
+        t.name === 'Customer Overrides' || 
+        t.name === 'Account Overrides' ||
+        t.name === 'Customers'
     );
     
     if (!overridesTable) {
@@ -299,54 +332,135 @@ export async function fetchCodaOverrides(
       return overrides;
     }
     
-    // Fetch rows from the table
-    const rowsResponse = await fetch(
-      `https://coda.io/apis/v1/docs/${docId}/tables/${overridesTable.id}/rows`,
-      {
+    // Fetch rows from the table with pagination
+    let pageToken: string | undefined;
+    do {
+      const url = new URL(`https://coda.io/apis/v1/docs/${docId}/tables/${overridesTable.id}/rows`);
+      url.searchParams.set('valueFormat', 'simpleWithArrays');
+      url.searchParams.set('limit', '500');
+      if (pageToken) {
+        url.searchParams.set('pageToken', pageToken);
+      }
+      
+      const rowsResponse = await fetch(url.toString(), {
         headers: {
           'Authorization': `Bearer ${codaToken}`,
           'Content-Type': 'application/json',
         },
+      });
+      
+      if (!rowsResponse.ok) {
+        console.error('Failed to fetch Coda rows:', rowsResponse.status);
+        return overrides;
       }
-    );
-    
-    if (!rowsResponse.ok) {
-      console.error('Failed to fetch Coda rows:', rowsResponse.status);
-      return overrides;
-    }
-    
-    const rows = await rowsResponse.json();
-    
-    for (const row of rows.items || []) {
-      const values = row.values;
-      const tenantId = values['TenantId'] || values['c-TenantId'];
       
-      if (!tenantId) continue;
+      const rows = await rowsResponse.json();
       
-      const override: Partial<AccountMapping> = {};
+      for (const row of rows.items || []) {
+        const values = row.values as Record<string, unknown>;
+        const tenantId = getCodaValue(values, 'tenantId') as string | undefined;
+        
+        if (!tenantId) continue;
+        
+        const override: Partial<AccountMapping> = {
+          codaRowId: row.id,
+        };
+        
+        // Map Coda columns to AccountMapping fields
+        const displayName = getCodaValue(values, 'displayName') as string | undefined;
+        if (displayName) override.name = displayName;
+        
+        const csm = getCodaValue(values, 'csm') as string | undefined;
+        if (csm) override.ownerName = csm;
+        
+        const tier = getCodaValue(values, 'tier') as string | undefined;
+        if (tier) override.tier = tier.toLowerCase() as AccountTier;
+        
+        const notes = getCodaValue(values, 'notes') as string | undefined;
+        if (notes) override.notes = notes;
+        
+        const segment = getCodaValue(values, 'segment') as string | undefined;
+        if (segment) override.segment = segment.toLowerCase() as AccountSegment;
+        
+        const hubspotId = getCodaValue(values, 'hubspotId') as string | undefined;
+        if (hubspotId) override.hubspotId = hubspotId;
+        
+        const stripeId = getCodaValue(values, 'stripeId') as string | undefined;
+        if (stripeId) override.stripeId = stripeId;
+        
+        const domain = getCodaValue(values, 'domain') as string | undefined;
+        if (domain) override.domain = domain;
+        
+        const industry = getCodaValue(values, 'industry') as string | undefined;
+        if (industry) override.industry = industry;
+        
+        const region = getCodaValue(values, 'region') as string | undefined;
+        if (region) override.region = region;
+        
+        const tags = getCodaValue(values, 'tags') as string[] | string | undefined;
+        if (tags) {
+          override.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
+        }
+        
+        const isExcluded = getCodaValue(values, 'isExcluded');
+        if (isExcluded === true || isExcluded === 'true' || isExcluded === 'Yes') {
+          override.isExcluded = true;
+        }
+        
+        overrides.set(tenantId, override);
+      }
       
-      // Map Coda columns to AccountMapping fields
-      const displayName = values['DisplayName'] || values['c-DisplayName'];
-      if (displayName) override.name = displayName;
-      
-      const csm = values['CSM'] || values['c-CSM'];
-      if (csm) override.ownerName = csm;
-      
-      const tier = values['Tier'] || values['c-Tier'];
-      if (tier) override.tier = tier.toLowerCase() as AccountTier;
-      
-      const notes = values['Notes'] || values['c-Notes'];
-      if (notes) override.notes = notes;
-      
-      const segment = values['Segment'] || values['c-Segment'];
-      if (segment) override.segment = segment.toLowerCase() as AccountSegment;
-      
-      overrides.set(tenantId, override);
-    }
+      pageToken = rows.nextPageToken;
+    } while (pageToken);
     
     return overrides;
   } catch (error) {
     console.error('Error fetching Coda overrides:', error);
     return overrides;
   }
+}
+
+// ============================================================================
+// Helper Exports
+// ============================================================================
+
+/**
+ * Check if a tenant ID belongs to an internal/test account.
+ */
+export function isInternalAccount(
+  tenantId: string,
+  mappings: Map<string, AccountMapping>
+): boolean {
+  const mapping = mappings.get(tenantId);
+  return mapping?.isInternal === true || mapping?.isExcluded === true;
+}
+
+/**
+ * Get all tenant IDs that should be excluded from metrics.
+ */
+export function getExcludedTenantIds(
+  mappings: Map<string, AccountMapping>
+): Set<string> {
+  const excluded = new Set<string>();
+  for (const [tenantId, mapping] of mappings) {
+    if (mapping.isExcluded || mapping.isInternal) {
+      excluded.add(tenantId);
+    }
+  }
+  return excluded;
+}
+
+/**
+ * Find an account mapping by account ID (not tenant ID).
+ */
+export function findAccountById(
+  accountId: string,
+  mappings: Map<string, AccountMapping>
+): { tenantId: string; mapping: AccountMapping } | undefined {
+  for (const [tenantId, mapping] of mappings) {
+    if (mapping.accountId === accountId) {
+      return { tenantId, mapping };
+    }
+  }
+  return undefined;
 }

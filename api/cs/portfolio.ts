@@ -20,6 +20,7 @@ import {
 import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring';
 import { buildAccountMappings, fetchCodaOverrides } from '../lib/account-mappings';
 import { generateAlerts } from '../lib/alerts';
+import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../lib/stripe-api';
 
 // Cache for performance (in-memory, reset on cold start)
 interface CacheEntry {
@@ -37,7 +38,13 @@ export default async function handler(
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Arda-API-Key, X-Arda-Author');
+  
+  // Edge caching headers for CDN optimization
+  // Cache for 2 minutes at CDN, serve stale for up to 5 minutes while revalidating
+  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
+  res.setHeader('CDN-Cache-Control', 'max-age=120');
+  res.setHeader('Vercel-CDN-Cache-Control', 'max-age=120');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -48,13 +55,21 @@ export default async function handler(
   }
   
   try {
-    // Check cache
+    // Check for Stripe enrichment flag
+    // Note: This significantly increases API response time due to Stripe calls
+    // Use sparingly to avoid rate limits (Stripe allows 100 req/sec)
+    const includeStripe = req.query.includeStripe === 'true';
+    const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
+    const stripeEnabled = includeStripe && !!stripeKey;
+    
+    // Check cache (skip cache if Stripe is requested - more dynamic data)
     const now = Date.now();
-    if (portfolioCache && (now - portfolioCache.timestamp) < CACHE_TTL_MS) {
+    if (!stripeEnabled && portfolioCache && (now - portfolioCache.timestamp) < CACHE_TTL_MS) {
       return res.status(200).json({
         accounts: portfolioCache.data,
         cached: true,
         cacheAge: now - portfolioCache.timestamp,
+        stripeEnriched: false,
       });
     }
     
@@ -94,6 +109,49 @@ export default async function handler(
     
     // Build account mappings
     const accountMappings = buildAccountMappings(tenantData, codaOverrides);
+    
+    // Fetch Stripe data if enabled (with rate limiting consideration)
+    const stripeDataMap = new Map<string, StripeEnrichedMetrics>();
+    
+    if (stripeEnabled && stripeKey) {
+      // Fetch Stripe data for accounts with email addresses
+      // Limit to 50 accounts max to avoid rate limits (Stripe allows 100 req/sec)
+      const accountsWithEmail = tenantData
+        .filter(t => t.email)
+        .slice(0, 50);
+      
+      // Batch fetch with small delays to be safe with rate limits
+      const batchSize = 10;
+      for (let i = 0; i < accountsWithEmail.length; i += batchSize) {
+        const batch = accountsWithEmail.slice(i, i + batchSize);
+        
+        const batchResults = await Promise.all(
+          batch.map(async (t) => {
+            try {
+              const stripeData = await getStripeEnrichedMetrics(
+                { email: t.email },
+                stripeKey
+              );
+              return { tenantId: t.tenantId, stripeData };
+            } catch (error) {
+              console.warn(`Failed to fetch Stripe data for ${t.email}:`, error);
+              return { tenantId: t.tenantId, stripeData: null };
+            }
+          })
+        );
+        
+        for (const result of batchResults) {
+          if (result.stripeData?.found) {
+            stripeDataMap.set(result.tenantId, result.stripeData);
+          }
+        }
+        
+        // Small delay between batches to respect rate limits
+        if (i + batchSize < accountsWithEmail.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+    }
     
     // Build account summaries
     const accounts: AccountSummary[] = [];
@@ -177,6 +235,9 @@ export default async function handler(
       const alertCount = alerts.length;
       const criticalAlertCount = alerts.filter(a => a.severity === 'critical').length;
       
+      // Get Stripe data if available
+      const stripeData = stripeDataMap.get(tenantId);
+      
       accounts.push({
         id: mapping?.accountId || tenantId,
         name: mapping?.name || deriveAccountName(tenantId, tenantInfo),
@@ -190,6 +251,9 @@ export default async function handler(
         daysSinceLastActivity,
         lifecycleStage,
         onboardingStatus,
+        // Include ARR from Stripe if available
+        arr: stripeData?.arr,
+        daysToRenewal: stripeData?.daysToRenewal,
         alertCount,
         criticalAlertCount,
         activityTrend,
@@ -215,17 +279,21 @@ export default async function handler(
       return a.daysSinceLastActivity - b.daysSinceLastActivity;
     });
     
-    // Cache the result
-    portfolioCache = {
-      data: accounts,
-      timestamp: now,
-    };
+    // Cache the result (only if Stripe enrichment was NOT requested)
+    if (!stripeEnabled) {
+      portfolioCache = {
+        data: accounts,
+        timestamp: now,
+      };
+    }
     
     return res.status(200).json({
       accounts,
       cached: false,
       totalAccounts: accounts.length,
       excludedAccounts: tenantAggregation.size - accounts.length,
+      stripeEnriched: stripeEnabled,
+      stripeAccountsEnriched: stripeEnabled ? stripeDataMap.size : 0,
     });
     
   } catch (error) {

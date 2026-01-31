@@ -72,6 +72,6 @@ describe('App row navigation', () => {
 
     await user.click(row);
 
-    expect(mockNavigate).toHaveBeenCalledWith('/customer/tenant-1');
+    expect(mockNavigate).toHaveBeenCalledWith('/account/tenant-1');
   });
 });

@@ -187,19 +187,6 @@ export function useAccountHealth(accountId: string | undefined) {
 }
 
 /**
- * Hook to get account timeline.
- */
-export function useAccountTimeline(accountId: string | undefined) {
-  const { data, isLoading, error } = useAccountDetail(accountId);
-  
-  return {
-    timeline: data?.timeline || [],
-    isLoading,
-    error,
-  };
-}
-
-/**
  * Hook to get account alerts.
  */
 export function useAccountAlerts(accountId: string | undefined) {

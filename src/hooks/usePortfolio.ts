@@ -5,14 +5,14 @@
  * Automatically falls back to legacy API if new API is unavailable.
  */
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { 
   fetchPortfolio, 
   queryKeys, 
   defaultQueryOptions,
   type PortfolioResponse,
 } from '../lib/api/cs-api';
-import { fetchCustomerMetrics, fetchCustomerDetails, type CustomerMetrics } from '../lib/arda-client';
+import { fetchCustomerMetrics, type CustomerMetrics } from '../lib/arda-client';
 import type { AccountSummary } from '../lib/types/account';
 
 // Track whether we should use the new API
@@ -171,14 +171,4 @@ export function usePortfolioStats() {
 /**
  * Hook to prefetch account details on hover.
  */
-export function usePrefetchAccount() {
-  const queryClient = useQueryClient();
-  
-  return (accountId: string) => {
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.accountDetail(accountId),
-      queryFn: () => fetchCustomerDetails(accountId),
-      ...defaultQueryOptions,
-    });
-  };
-}
+// Prefetch helper removed (unused)

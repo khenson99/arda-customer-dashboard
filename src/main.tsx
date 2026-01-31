@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import App from './App'
 import './index.css'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { EnvGuard } from './components/EnvGuard'
 
 // Lazy load components for code splitting
 const CustomerDetail = lazy(() =>
@@ -21,6 +23,9 @@ const LiveFeed = lazy(() =>
 const AlertInbox = lazy(() =>
   import('./components/AlertInbox').then((m) => ({ default: (m as any).AlertInbox || (m as any).default }))
 );
+const StatusPage = lazy(() =>
+  import('./components/StatusPage').then((m) => ({ default: (m as any).StatusPage || (m as any).default }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,18 +41,22 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Suspense fallback={<div className="loading-state"><div className="loading-spinner" /><p>Loading...</p></div>}>
-          <Routes>
-            <Route path="/" element={<App />} />
-            <Route path="/activity" element={<ActivityOverview />} />
-            <Route path="/feed" element={<LiveFeed />} />
-            <Route path="/alerts" element={<AlertInbox />} />
-            {/* New Account 360 view - enhanced detail page */}
-            <Route path="/account/:tenantId" element={<Account360 />} />
-            {/* Legacy customer detail route - still supported */}
-            <Route path="/customer/:tenantId" element={<CustomerDetail />} />
-          </Routes>
-        </Suspense>
+        <ErrorBoundary>
+          <EnvGuard />
+          <Suspense fallback={<div className="loading-state"><div className="loading-spinner" /><p>Loading...</p></div>}>
+            <Routes>
+              <Route path="/" element={<App />} />
+              <Route path="/activity" element={<ActivityOverview />} />
+              <Route path="/feed" element={<LiveFeed />} />
+              <Route path="/alerts" element={<AlertInbox />} />
+              <Route path="/status" element={<StatusPage />} />
+              {/* New Account 360 view - enhanced detail page */}
+              <Route path="/account/:tenantId" element={<Account360 />} />
+              {/* Legacy customer detail route - still supported */}
+              <Route path="/customer/:tenantId" element={<CustomerDetail />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,

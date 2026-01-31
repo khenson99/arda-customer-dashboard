@@ -489,6 +489,98 @@ const ALERT_DEFINITIONS: AlertDefinition[] = [
       return null;
     },
   },
+  
+  // ============================================================================
+  // PAYMENT OVERDUE ALERTS
+  // ============================================================================
+  {
+    type: 'payment_overdue',
+    category: 'action_required',
+    check: (input) => {
+      if (!input.commercial) return null;
+      
+      const { paymentStatus, overdueAmount } = input.commercial;
+      
+      if (paymentStatus === 'overdue' && overdueAmount && overdueAmount > 0) {
+        const isHighValue = input.arr && input.arr >= 10000;
+        return {
+          severity: isHighValue ? 'critical' : 'high',
+          title: `Payment overdue - $${overdueAmount.toLocaleString()}`,
+          description: `${input.accountName} has an overdue balance of $${overdueAmount.toLocaleString()}.${
+            isHighValue ? ' This is a high-value account requiring immediate attention.' : ''
+          }`,
+          evidence: [
+            `Overdue amount: $${overdueAmount.toLocaleString()}`,
+            `Payment status: ${paymentStatus}`,
+            input.arr ? `ARR: $${input.arr.toLocaleString()}` : '',
+            input.commercial.lastPaymentDate ? `Last payment: ${input.commercial.lastPaymentDate}` : '',
+          ].filter(Boolean),
+          suggestedAction: 'Coordinate with finance team and reach out to understand payment situation',
+          playbook: 'payment-recovery',
+          slaHours: isHighValue ? 24 : 48,
+        };
+      }
+      
+      if (paymentStatus === 'at_risk') {
+        return {
+          severity: 'medium',
+          title: 'Payment at risk',
+          description: `${input.accountName}'s payment status indicates potential issues.`,
+          evidence: [
+            `Payment status: ${paymentStatus}`,
+            input.commercial.lastPaymentDate ? `Last payment: ${input.commercial.lastPaymentDate}` : 'No recent payment on file',
+          ].filter(Boolean),
+          suggestedAction: 'Monitor payment status and prepare to engage if payment fails',
+          slaHours: 72,
+        };
+      }
+      
+      return null;
+    },
+  },
+  
+  // ============================================================================
+  // CHAMPION LEFT ALERTS
+  // ============================================================================
+  {
+    type: 'champion_left',
+    category: 'risk',
+    check: (input) => {
+      // This alert requires stakeholder tracking data
+      // For now, we detect this through sudden activity drops from key users
+      // In production, this would integrate with CRM contact change events
+      
+      if (!input.usage) return null;
+      
+      // If we have stakeholder data indicating a champion departure
+      // This is a placeholder for when stakeholder tracking is implemented
+      // The actual detection would come from CRM webhooks or manual input
+      
+      // Heuristic: If a highly active account suddenly has no activity
+      // and it's not a new account, this might indicate key person left
+      const wasActive = input.usage.activeUsersLast30Days === 0 && 
+                       input.usage.totalUsers > 3 &&
+                       input.accountAgeDays > 90;
+      
+      if (wasActive && input.usage.daysSinceLastActivity >= 21) {
+        return {
+          severity: 'high',
+          title: 'Potential champion departure',
+          description: `${input.accountName} was previously active but has gone silent. A key stakeholder may have left.`,
+          evidence: [
+            `No active users in last 30 days (previously had ${input.usage.totalUsers} users)`,
+            `Days since last activity: ${input.usage.daysSinceLastActivity}`,
+            'Recommend verifying stakeholder contacts',
+          ],
+          suggestedAction: 'Verify key contacts are still at the company and identify new champion if needed',
+          playbook: 'champion-recovery',
+          slaHours: 48,
+        };
+      }
+      
+      return null;
+    },
+  },
 ];
 
 // ============================================================================

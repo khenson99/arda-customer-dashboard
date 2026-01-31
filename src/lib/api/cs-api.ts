@@ -5,7 +5,7 @@
  * Uses the new server-side API for better performance.
  */
 
-import type { AccountSummary, AccountDetail, Alert } from '../types/account';
+import type { AccountSummary, AccountDetail, Alert, Interaction, InteractionType, InteractionChannel } from '../types/account';
 
 // API base URL - uses relative path in production, configurable in dev
 const API_BASE = '/api/cs';
@@ -111,6 +111,78 @@ export async function fetchAlerts(options?: {
   const response = await fetch(url, {
     method: 'GET',
     headers: createHeaders(),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `API Error: ${response.status}`);
+  }
+  
+  return response.json();
+}
+
+// ============================================================================
+// Interactions API
+// ============================================================================
+
+export interface InteractionsResponse {
+  interactions: Interaction[];
+  total: number;
+  synced: boolean;
+}
+
+export interface CreateInteractionRequest {
+  type: InteractionType;
+  channel?: InteractionChannel;
+  subject?: string;
+  summary: string;
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  nextAction?: string;
+  nextActionDate?: string;
+  occurredAt?: string;
+  createdByName?: string;
+}
+
+export interface CreateInteractionResponse {
+  interaction: Interaction;
+  synced: boolean;
+}
+
+/**
+ * Fetch all interactions/notes for an account.
+ * Reads from Coda CS Interactions table.
+ */
+export async function fetchAccountInteractions(accountId: string): Promise<InteractionsResponse> {
+  const response = await fetch(`${API_BASE}/accounts/${encodeURIComponent(accountId)}/notes`, {
+    method: 'GET',
+    headers: createHeaders(),
+  });
+  
+  if (!response.ok) {
+    // Return empty array on error for graceful degradation
+    console.error('Failed to fetch interactions:', response.status);
+    return {
+      interactions: [],
+      total: 0,
+      synced: false,
+    };
+  }
+  
+  return response.json();
+}
+
+/**
+ * Create a new interaction/note for an account.
+ * Persists to Coda CS Interactions table.
+ */
+export async function createAccountInteraction(
+  accountId: string,
+  interaction: CreateInteractionRequest
+): Promise<CreateInteractionResponse> {
+  const response = await fetch(`${API_BASE}/accounts/${encodeURIComponent(accountId)}/notes`, {
+    method: 'POST',
+    headers: createHeaders(),
+    body: JSON.stringify(interaction),
   });
   
   if (!response.ok) {

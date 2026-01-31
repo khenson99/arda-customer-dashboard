@@ -4,6 +4,17 @@ import { BrowserRouter } from 'react-router-dom';
 import { TabNavigation } from '../TabNavigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+vi.mock('../../lib/arda-client', () => ({
+  fetchCustomerMetrics: vi.fn().mockResolvedValue([
+    {
+      tenantId: 't1',
+      displayName: 'Acme',
+      companyName: 'Acme',
+      alerts: [{ type: 'churn_risk', severity: 'critical', message: 'test', suggestedAction: 'act' }],
+    },
+  ]),
+}));
+
 // Helper to wrap components with router
 const renderWithRouter = (component: React.ReactNode) => {
   const queryClient = new QueryClient();
@@ -24,6 +35,7 @@ describe('TabNavigation', () => {
     expect(screen.getByText('Alerts')).toBeInTheDocument();
     expect(screen.getByText('Activity')).toBeInTheDocument();
     expect(screen.getByText('Live Feed')).toBeInTheDocument();
+    expect(screen.getByText('Status')).toBeInTheDocument();
   });
 
   it('links point to correct routes', () => {
@@ -44,6 +56,6 @@ describe('TabNavigation', () => {
     const { container } = renderWithRouter(<TabNavigation />);
     
     expect(container.querySelector('.tab-navigation')).toBeInTheDocument();
-    expect(container.querySelectorAll('.tab-link').length).toBe(4);
+    expect(container.querySelectorAll('.tab-link').length).toBe(5);
   });
 });

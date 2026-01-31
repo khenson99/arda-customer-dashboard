@@ -35,6 +35,7 @@ import {
 import { calculateHealthScore, type HealthScoringInput } from '../../lib/health-scoring';
 import { buildAccountMappings, fetchCodaOverrides } from '../../lib/account-mappings';
 import { generateAlerts } from '../../lib/alerts';
+import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../lib/stripe-api';
 
 export default async function handler(
   req: VercelRequest,
@@ -43,7 +44,13 @@ export default async function handler(
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Arda-API-Key, X-Arda-Author');
+  
+  // Edge caching headers - shorter TTL for detail views (more dynamic)
+  // Cache for 1 minute at CDN, serve stale for up to 3 minutes while revalidating
+  res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=180');
+  res.setHeader('CDN-Cache-Control', 'max-age=60');
+  res.setHeader('Vercel-CDN-Cache-Control', 'max-age=60');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -197,8 +204,16 @@ export default async function handler(
       accountAgeDays
     );
     
-    // Build commercial metrics (placeholder - would come from Stripe/CRM)
-    const commercial = buildCommercialMetrics(tenantInfo, mapping);
+    // Fetch Stripe data for commercial metrics enrichment
+    // Try to match by Stripe customer ID first, then by email domain
+    const emailInfo = extractEmailInfo(tenantInfo.payload.tenantName);
+    const stripeData = await fetchStripeDataForAccount(
+      emailInfo?.email,
+      mapping?.stripeId
+    );
+    
+    // Build commercial metrics with optional Stripe enrichment
+    const commercial = buildCommercialMetrics(tenantInfo, mapping, stripeData);
     
     // Build support metrics (placeholder - would come from Zendesk/etc)
     const support = buildSupportMetrics();
@@ -259,7 +274,7 @@ export default async function handler(
       externalIds: {
         coda: mapping?.codaRowId,
         hubspot: mapping?.hubspotId,
-        stripe: mapping?.stripeId,
+        stripe: stripeData?.customerId || mapping?.stripeId,
       },
       createdAt: new Date(createdAt).toISOString(),
       updatedAt: new Date().toISOString(),
@@ -418,16 +433,103 @@ function buildUsageMetrics(
 
 function buildCommercialMetrics(
   tenant: ArdaTenant,
-  mapping?: { tier?: string }
+  mapping?: { tier?: string },
+  stripeData?: StripeEnrichedMetrics
 ): CommercialMetrics {
-  // This would be enriched with Stripe data in production
-  return {
+  // Base commercial metrics from tenant data
+  const baseMetrics: CommercialMetrics = {
     plan: tenant.payload.plan || 'Unknown',
     currency: 'USD',
     paymentStatus: tenant.payload.subscriptionReference?.state === 'ACTIVE' ? 'current' : 'unknown',
     expansionSignals: [],
     expansionPotential: 'none',
   };
+  
+  // Enrich with Stripe data if available
+  if (stripeData?.found) {
+    return {
+      ...baseMetrics,
+      plan: stripeData.plan || baseMetrics.plan,
+      arr: stripeData.arr,
+      mrr: stripeData.mrr,
+      currency: stripeData.currency || baseMetrics.currency,
+      contractEndDate: stripeData.contractEndDate,
+      renewalDate: stripeData.renewalDate,
+      daysToRenewal: stripeData.daysToRenewal,
+      termMonths: stripeData.termMonths,
+      autoRenew: stripeData.autoRenew,
+      paymentStatus: stripeData.paymentStatus,
+      lastPaymentDate: stripeData.lastPaymentDate,
+      overdueAmount: stripeData.overdueAmount,
+      expansionSignals: baseMetrics.expansionSignals,
+      expansionPotential: calculateExpansionPotential(stripeData),
+    };
+  }
+  
+  return baseMetrics;
+}
+
+/**
+ * Calculate expansion potential based on Stripe data
+ */
+function calculateExpansionPotential(
+  stripeData: StripeEnrichedMetrics
+): 'high' | 'medium' | 'low' | 'none' {
+  if (!stripeData.found || stripeData.paymentStatus === 'churned') {
+    return 'none';
+  }
+  
+  if (stripeData.paymentStatus === 'current' && stripeData.subscriptionStatus === 'active') {
+    if (stripeData.arr && stripeData.arr >= 10000) {
+      return 'high';
+    }
+    if (stripeData.arr && stripeData.arr >= 5000) {
+      return 'medium';
+    }
+    return 'low';
+  }
+  
+  if (stripeData.paymentStatus === 'overdue' || stripeData.paymentStatus === 'at_risk') {
+    return 'none';
+  }
+  
+  return 'low';
+}
+
+/**
+ * Attempt to fetch Stripe data for an account
+ * Returns undefined if Stripe is not configured or customer not found
+ */
+async function fetchStripeDataForAccount(
+  email?: string,
+  stripeCustomerId?: string
+): Promise<StripeEnrichedMetrics | undefined> {
+  const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
+  
+  if (!stripeKey) {
+    // Stripe not configured - fail gracefully
+    return undefined;
+  }
+  
+  if (!email && !stripeCustomerId) {
+    return undefined;
+  }
+  
+  try {
+    const stripeData = await getStripeEnrichedMetrics(
+      { 
+        email: email,
+        customerId: stripeCustomerId,
+      },
+      stripeKey
+    );
+    
+    return stripeData.found ? stripeData : undefined;
+  } catch (error) {
+    // Log but don't fail the request
+    console.warn('Failed to fetch Stripe data:', error);
+    return undefined;
+  }
 }
 
 function buildSupportMetrics(): SupportMetrics {

@@ -33,7 +33,7 @@ export function AlertInbox() {
   // Filters
   const [severityFilter, setSeverityFilter] = useState<FilterSeverity>('all');
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>('all');
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
+  const [statusFilter] = useState<FilterStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('severity');
   

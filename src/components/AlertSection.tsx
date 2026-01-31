@@ -23,7 +23,7 @@ export const AlertSection = memo(function AlertSection({
         {customersWithAlerts.slice(0, 5).map((customer) => (
           <Link 
             key={customer.tenantId} 
-            to={`/customer/${customer.tenantId}`}
+            to={`/account/${customer.tenantId}`}
             className="alert-card"
           >
             <div className="alert-card-header">

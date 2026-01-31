@@ -237,9 +237,8 @@ export async function aggregateByTenant(
   apiKey: string,
   author: string
 ): Promise<Map<string, TenantActivityData>> {
-  // Fetch all data in parallel
-  const [tenants, items, kanbanCards, orders] = await Promise.all([
-    fetchTenants(apiKey, author).catch(() => []),
+  // Fetch activity data in parallel (tenants fetched separately by consumers who need tenant info)
+  const [items, kanbanCards, orders] = await Promise.all([
     fetchItems(apiKey, author).catch(() => []),
     fetchKanbanCards(apiKey, author).catch(() => []),
     fetchOrders(apiKey, author).catch(() => []),
@@ -319,12 +318,6 @@ export async function aggregateByTenant(
       data.lastActivityTimestamp = Math.max(data.lastActivityTimestamp, timestamp);
       data.firstActivityTimestamp = Math.min(data.firstActivityTimestamp, timestamp);
     }
-  }
-  
-  // Build tenant info map for metadata
-  const tenantInfoMap = new Map<string, ArdaTenant>();
-  for (const tenant of tenants) {
-    tenantInfoMap.set(tenant.payload.eId, tenant);
   }
   
   return aggregation;

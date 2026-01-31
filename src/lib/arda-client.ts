@@ -4,7 +4,7 @@
 
 import { resolveTenantName, getTenantInfo, TENANT_NAMES } from './tenant-names';
 import { getCustomerOverrides, type CustomerOverride } from './coda-client';
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_BASE || '/api';
 
 // Get API key from environment or localStorage
 const getApiKey = () => {
@@ -22,7 +22,13 @@ interface QueryOptions {
 }
 
 const createHeaders = () => ({
-  'Authorization': `Bearer ${getApiKey()}`,
+  ...(() => {
+    const key = getApiKey();
+    if (!key && import.meta.env.PROD) {
+      throw new Error('Missing VITE_ARDA_API_KEY');
+    }
+    return { Authorization: `Bearer ${key}` };
+  })(),
   'X-Author': getAuthor(),
   'X-Request-ID': crypto.randomUUID(),
   'Content-Type': 'application/json',
@@ -307,6 +313,88 @@ export function deleteInteraction(tenantId: string, interactionId: string): void
     }
   } catch (error) {
     console.error('Failed to delete interaction:', error);
+  }
+}
+
+// ============================================================================
+// localStorage utilities for Task persistence
+// ============================================================================
+
+const TASKS_KEY = 'arda_csm_tasks';
+
+export interface StoredTask {
+  id: string;
+  accountId: string;
+  title: string;
+  description?: string;
+  type: 'follow_up' | 'check_in' | 'onboarding' | 'training' | 'review' | 'escalation' | 'renewal' | 'expansion' | 'custom';
+  priority: 'urgent' | 'high' | 'normal' | 'low';
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'overdue';
+  dueDate?: string;
+  completedAt?: string;
+  assigneeId?: string;
+  assigneeName?: string;
+  source: 'manual' | 'playbook' | 'alert' | 'recurring' | 'system';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getStoredTasks(accountId: string): StoredTask[] {
+  try {
+    const data = localStorage.getItem(TASKS_KEY);
+    if (!data) return [];
+    const allTasks: Record<string, StoredTask[]> = JSON.parse(data);
+    return allTasks[accountId] || [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveTask(accountId: string, task: StoredTask): void {
+  try {
+    const data = localStorage.getItem(TASKS_KEY);
+    const allTasks: Record<string, StoredTask[]> = data ? JSON.parse(data) : {};
+    if (!allTasks[accountId]) {
+      allTasks[accountId] = [];
+    }
+    // Add to beginning of list
+    allTasks[accountId].unshift(task);
+    localStorage.setItem(TASKS_KEY, JSON.stringify(allTasks));
+  } catch (error) {
+    console.error('Failed to save task:', error);
+  }
+}
+
+export function updateTask(accountId: string, taskId: string, updates: Partial<StoredTask>): void {
+  try {
+    const data = localStorage.getItem(TASKS_KEY);
+    if (!data) return;
+    const allTasks: Record<string, StoredTask[]> = JSON.parse(data);
+    if (allTasks[accountId]) {
+      allTasks[accountId] = allTasks[accountId].map(task => {
+        if (task.id === taskId) {
+          return { ...task, ...updates, updatedAt: new Date().toISOString() };
+        }
+        return task;
+      });
+      localStorage.setItem(TASKS_KEY, JSON.stringify(allTasks));
+    }
+  } catch (error) {
+    console.error('Failed to update task:', error);
+  }
+}
+
+export function deleteTask(accountId: string, taskId: string): void {
+  try {
+    const data = localStorage.getItem(TASKS_KEY);
+    if (!data) return;
+    const allTasks: Record<string, StoredTask[]> = JSON.parse(data);
+    if (allTasks[accountId]) {
+      allTasks[accountId] = allTasks[accountId].filter(t => t.id !== taskId);
+      localStorage.setItem(TASKS_KEY, JSON.stringify(allTasks));
+    }
+  } catch (error) {
+    console.error('Failed to delete task:', error);
   }
 }
 
