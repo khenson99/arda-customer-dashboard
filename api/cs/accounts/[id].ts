@@ -36,6 +36,7 @@ import { calculateHealthScore, type HealthScoringInput } from '../../../server/l
 import { buildAccountMappings, fetchCodaOverrides } from '../../../server/lib/account-mappings.js';
 import { generateAlerts } from '../../../server/lib/alerts.js';
 import { getStripeEnrichedMetrics, type StripeEnrichedMetrics } from '../../../server/lib/stripe-api.js';
+import { requireApiKey } from '../../lib/auth.js';
 import {
   buildHubSpotUrl,
   enrichAccountFromHubSpot,
@@ -45,13 +46,11 @@ import {
   isHubSpotConfigured,
   type HubSpotEnrichedData,
 } from '../../lib/hubspot-client.js';
-import { requireApiKey } from '../../lib/auth.js';
 
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  if (!requireApiKey(req, res)) return;
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -71,6 +70,10 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
   
+  if (!requireApiKey(req, res)) {
+    return;
+  }
+  
   const { id } = req.query;
   const accountId = Array.isArray(id) ? id[0] : id;
   
@@ -84,10 +87,6 @@ export default async function handler(
     const author = req.headers['x-arda-author'] as string || process.env.ARDA_AUTHOR || 'dashboard@arda.cards';
     const codaToken = process.env.CODA_API_TOKEN;
     const codaDocId = process.env.CODA_DOC_ID || '0cEU3RTNX6';
-    
-    if (!apiKey) {
-      return res.status(401).json({ error: 'Missing API key' });
-    }
     
     // Fetch all data
     const [tenants, items, kanbanCards, orders, codaOverrides] = await Promise.all([
@@ -104,6 +103,30 @@ export default async function handler(
     
     // First try direct tenant ID match
     tenantInfo = tenants.find(t => t.payload.eId === accountId);
+    
+    // Try partial UUID match (org-xxxxx uses first 8 chars of tenant UUID)
+    if (!tenantInfo) {
+      // Extract the short ID from patterns like "org-7a0b8eb9", "individual-331467a1"
+      const shortIdMatch = accountId.match(/^(?:org|individual|company|internal)-([a-f0-9]+)$/i);
+      if (shortIdMatch) {
+        const shortId: string = shortIdMatch[1];
+        tenantInfo = tenants.find(t => t.payload.eId.startsWith(shortId));
+        if (tenantInfo) {
+          tenantId = tenantInfo.payload.eId;
+        }
+      }
+    }
+    
+    // Also try if the accountId is just the first 8 chars of a UUID without prefix
+    if (!tenantInfo) {
+      const cleanId = accountId.toLowerCase();
+      if (/^[a-f0-9]{8}$/.test(cleanId)) {
+        tenantInfo = tenants.find(t => t.payload.eId.toLowerCase().startsWith(cleanId));
+        if (tenantInfo) {
+          tenantId = tenantInfo.payload.eId;
+        }
+      }
+    }
     
     if (!tenantInfo) {
       // Try to find by account mapping
@@ -127,6 +150,7 @@ export default async function handler(
         }
       }
     }
+
     
     if (!tenantInfo) {
       return res.status(404).json({ error: 'Account not found' });

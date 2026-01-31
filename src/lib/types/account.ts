@@ -379,6 +379,12 @@ export interface Alert {
   // Ownership
   ownerId?: string;
   ownerName?: string;
+  acknowledgedBy?: string;
+  resolvedBy?: string;
+  snoozedUntil?: string;
+  snoozeReason?: string;
+  playbookId?: string;
+  playbookProgress?: number;
   
   // SLA
   slaDeadline?: string;                // ISO date
@@ -390,6 +396,8 @@ export interface Alert {
   acknowledgedAt?: string;
   resolvedAt?: string;
   outcome?: AlertOutcome;
+  notes?: AlertNote[];
+  actionLog?: AlertActionLog[];
   
   // Impact
   arrAtRisk?: number;
@@ -416,6 +424,24 @@ export interface AlertOutcome {
   result: 'success' | 'partial' | 'failed' | 'not_applicable';
   notes?: string;
   resolvedBy?: string;
+}
+
+export interface AlertNote {
+  id: string;
+  alertId: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface AlertActionLog {
+  id: string;
+  alertId: string;
+  action: 'acknowledged' | 'snoozed' | 'resolved' | 'assigned' | 'note_added' | 'playbook_started' | 'playbook_completed' | 'reopened';
+  actor: string;
+  actorName?: string;
+  timestamp: string;
+  details?: Record<string, unknown>;
 }
 
 // ============================================================================

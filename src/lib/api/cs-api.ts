@@ -107,7 +107,11 @@ export interface AlertNotePayload {
 /**
  * Update a single alert (status, notes, ownership, etc.).
  */
-export async function updateAlert(alertId: string, update: Partial<Alert>): Promise<void> {
+export interface AlertUpdatePayload extends Partial<Alert> {
+  actionLogEntry?: any; // server validates
+}
+
+export async function updateAlert(alertId: string, update: AlertUpdatePayload): Promise<void> {
   const response = await fetch(`${API_BASE}/alerts?alertId=${encodeURIComponent(alertId)}`, {
     method: 'PATCH',
     headers: createHeaders(),

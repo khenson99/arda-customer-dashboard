@@ -10,35 +10,28 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TabNavigation } from './TabNavigation';
 import { fetchAlerts, queryKeys, defaultQueryOptions, type AlertWithAccount } from '../lib/api/cs-api';
-import type { AlertSeverity, AlertCategory, AlertStatus, AlertType, Playbook } from '../lib/types/account';
+import type { AlertSeverity, AlertCategory, AlertStatus, AlertType } from '../lib/types/account';
 import {
-  getAlertState,
-  getAllAlertStates,
   acknowledgeAlert,
   snoozeAlert,
   resolveAlert,
   assignAlert,
   reopenAlert,
-  startPlaybook,
-  updatePlaybookProgress,
-  completePlaybook,
   addAlertNote,
   getAlertNotes,
   getAlertActionLog,
   calculateSLA,
   getRecommendedPlaybook,
-  getCurrentUser,
+  startPlaybook,
+  updatePlaybookProgress,
+  completePlaybook,
   SNOOZE_DURATIONS,
   OUTCOME_OPTIONS,
   PLAYBOOKS,
   TEAM_MEMBERS,
-  type AlertStateOverride,
-  type AlertNote,
-  type AlertActionLog,
-  type SLAInfo,
-  type PlaybookDefinition,
   type OutcomeResult,
 } from '../lib/alert-persistence';
+import type { AlertNote, AlertActionLog, Alert } from '../lib/types/account';
 
 // ============================================================================
 // Types
@@ -48,9 +41,26 @@ type FilterSeverity = AlertSeverity | 'all';
 type FilterCategory = AlertCategory | 'all';
 type FilterStatus = AlertStatus | 'all';
 type SortOption = 'severity' | 'newest' | 'oldest' | 'sla' | 'arr';
+type PlaybookTask = { title: string; description?: string };
+type PlaybookDefinition = {
+  id: string;
+  name: string;
+  description?: string;
+  alertTypes?: AlertType[];
+  tasks: PlaybookTask[];
+  estimatedDays?: number;
+};
+type SLAInfo = { 
+  status: 'on_track' | 'at_risk' | 'breached' | 'none'; 
+  remainingHours: number | null; 
+  overdueHours: number | null;
+  hoursRemaining: number;
+  deadline: string | null;
+  timeRemaining: string;
+  percentRemaining: number;
+ };
 
 interface EnrichedAlert extends AlertWithAccount {
-  localState?: AlertStateOverride;
   slaInfo: SLAInfo;
   recommendedPlaybook?: PlaybookDefinition;
 }
@@ -75,9 +85,6 @@ export function AlertInbox() {
   // Detail panel state
   const [detailPanelAlertId, setDetailPanelAlertId] = useState<string | null>(null);
   
-  // Force re-render when local state changes
-  const [localStateVersion, setLocalStateVersion] = useState(0);
-  
   // Fetch alerts from the dedicated alerts API
   const { data: alertsResponse, isLoading, error } = useQuery({
     queryKey: queryKeys.alerts({ severityFilter, statusFilter }),
@@ -93,26 +100,51 @@ export function AlertInbox() {
   // Enrich alerts with local state and SLA info
   const enrichedAlerts: EnrichedAlert[] = useMemo(() => {
     if (!alertsResponse?.alerts) return [];
-    
-    const localStates = getAllAlertStates();
+
+    const normalizedPlaybooks: PlaybookDefinition[] = PLAYBOOKS.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description || '',
+      alertTypes: p.alertTypes || [],
+      tasks: p.tasks || p.steps || [],
+      estimatedDays: p.estimatedDays || 7,
+    }));
     
     return alertsResponse.alerts.map(alert => {
-      const localState = localStates.get(alert.id);
-      const effectiveStatus = localState?.status || alert.status;
-      const slaInfo = calculateSLA(alert.slaDeadline, alert.createdAt);
-      const recommendedPlaybook = getRecommendedPlaybook(alert.type);
+      const rawSla = calculateSLA(alert.slaDeadline, alert.createdAt);
+      const deadlineMs = alert.slaDeadline ? new Date(alert.slaDeadline).getTime() : null;
+      const createdMs = alert.createdAt ? new Date(alert.createdAt).getTime() : Date.now();
+      const totalDurationMs = deadlineMs ? deadlineMs - createdMs : null;
+      const remainingMs = deadlineMs ? deadlineMs - Date.now() : null;
+      const percentRemaining = totalDurationMs && totalDurationMs > 0
+        ? Math.max(0, Math.min(100, Math.round(((remainingMs ?? 0) / totalDurationMs) * 100)))
+        : 0;
+      const timeRemaining = rawSla.status === 'breached'
+        ? `${rawSla.overdueHours ?? 0}h overdue`
+        : rawSla.status === 'none'
+          ? 'No SLA'
+          : `${rawSla.remainingHours ?? 0}h left`;
+      const hoursRemaining = rawSla.status === 'breached'
+        ? -(rawSla.overdueHours ?? 0)
+        : rawSla.remainingHours ?? Number.POSITIVE_INFINITY;
+      const recommendedPlaybook = getRecommendedPlaybook(alert.type) 
+        || normalizedPlaybooks.find(p => p.alertTypes?.includes(alert.type));
       
       return {
         ...alert,
-        status: effectiveStatus,
-        localState,
-        slaInfo,
+        slaInfo: {
+          ...rawSla,
+          timeRemaining,
+          percentRemaining,
+          deadline: alert.slaDeadline || null,
+          hoursRemaining,
+        },
         recommendedPlaybook,
-        ownerName: localState?.assignedToName || alert.ownerName,
-        ownerId: localState?.assignedTo || alert.ownerId,
+        ownerName: alert.ownerName,
+        ownerId: alert.ownerId,
       };
     });
-  }, [alertsResponse, localStateVersion]);
+  }, [alertsResponse]);
   
   // Apply client-side filters
   const filteredAlerts = useMemo(() => {
@@ -121,20 +153,14 @@ export function AlertInbox() {
       
       // Handle status filter with local overrides
       if (statusFilter !== 'all') {
-        const effectiveStatus = alert.localState?.status || alert.status;
-        
-        // Handle snoozed alerts - check if snooze has expired
-        if (effectiveStatus === 'snoozed' && alert.localState?.snoozedUntil) {
-          const snoozedUntil = new Date(alert.localState.snoozedUntil).getTime();
+        let effectiveStatus = alert.status;
+        if (effectiveStatus === 'snoozed' && alert.snoozedUntil) {
+          const snoozedUntil = new Date(alert.snoozedUntil).getTime();
           if (snoozedUntil < Date.now()) {
-            // Snooze expired, treat as open
-            if (statusFilter !== 'open') return false;
-          } else {
-            if (statusFilter !== 'snoozed') return false;
+            effectiveStatus = 'open';
           }
-        } else if (effectiveStatus !== statusFilter) {
-          return false;
         }
+        if (effectiveStatus !== statusFilter) return false;
       }
       
       if (searchQuery) {
@@ -160,11 +186,14 @@ export function AlertInbox() {
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         case 'oldest':
           return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        case 'sla':
-          // Breached first, then by hours remaining
+        case 'sla': {
+          // Breached first, then fewest hours remaining
           if (a.slaInfo.status === 'breached' && b.slaInfo.status !== 'breached') return -1;
           if (b.slaInfo.status === 'breached' && a.slaInfo.status !== 'breached') return 1;
-          return a.slaInfo.hoursRemaining - b.slaInfo.hoursRemaining;
+          const aScore = a.slaInfo.status === 'none' ? Number.POSITIVE_INFINITY : a.slaInfo.hoursRemaining;
+          const bScore = b.slaInfo.status === 'none' ? Number.POSITIVE_INFINITY : b.slaInfo.hoursRemaining;
+          return aScore - bScore;
+        }
         case 'arr':
           return (b.arrAtRisk || 0) - (a.arrAtRisk || 0);
         default:
@@ -194,10 +223,10 @@ export function AlertInbox() {
     };
   }, [enrichedAlerts]);
   
-  // Refresh local state
-  const refreshLocalState = useCallback(() => {
-    setLocalStateVersion(v => v + 1);
-  }, []);
+  // Refetch alerts after a mutation
+  const refreshAlerts = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.alerts({ severityFilter, statusFilter }) });
+  }, [queryClient, severityFilter, statusFilter]);
   
   // Bulk actions
   const handleSelectAll = useCallback(() => {
@@ -220,23 +249,29 @@ export function AlertInbox() {
     });
   }, []);
   
-  const handleBulkAcknowledge = useCallback(() => {
-    selectedAlertIds.forEach(id => acknowledgeAlert(id));
+  const handleBulkAcknowledge = useCallback(async () => {
+    for (const id of selectedAlertIds) {
+      await acknowledgeAlert(id);
+    }
     setSelectedAlertIds(new Set());
-    refreshLocalState();
-  }, [selectedAlertIds, refreshLocalState]);
+    refreshAlerts();
+  }, [selectedAlertIds, refreshAlerts]);
   
-  const handleBulkSnooze = useCallback((days: number) => {
-    selectedAlertIds.forEach(id => snoozeAlert(id, days));
+  const handleBulkSnooze = useCallback(async (days: number) => {
+    for (const id of selectedAlertIds) {
+      await snoozeAlert(id, days);
+    }
     setSelectedAlertIds(new Set());
-    refreshLocalState();
-  }, [selectedAlertIds, refreshLocalState]);
+    refreshAlerts();
+  }, [selectedAlertIds, refreshAlerts]);
   
-  const handleBulkAssign = useCallback((assigneeId: string, assigneeName: string) => {
-    selectedAlertIds.forEach(id => assignAlert(id, assigneeId, assigneeName));
+  const handleBulkAssign = useCallback(async (assigneeId: string, assigneeName: string) => {
+    for (const id of selectedAlertIds) {
+      await assignAlert(id, assigneeId, assigneeName);
+    }
     setSelectedAlertIds(new Set());
-    refreshLocalState();
-  }, [selectedAlertIds, refreshLocalState]);
+    refreshAlerts();
+  }, [selectedAlertIds, refreshAlerts]);
   
   // Handle error state
   if (error) {
@@ -451,7 +486,7 @@ export function AlertInbox() {
                   isSelected={selectedAlertIds.has(alert.id)}
                   onToggleSelect={() => handleToggleSelect(alert.id)}
                   onOpenDetail={() => setDetailPanelAlertId(alert.id)}
-                  onStateChange={refreshLocalState}
+                  onStateChange={refreshAlerts}
                 />
               ))}
             </div>
@@ -471,7 +506,7 @@ export function AlertInbox() {
           alertId={detailPanelAlertId}
           alerts={enrichedAlerts}
           onClose={() => setDetailPanelAlertId(null)}
-          onStateChange={refreshLocalState}
+          onStateChange={refreshAlerts}
         />
       )}
     </div>
@@ -599,7 +634,7 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
     }
   };
   
-  const effectiveStatus = alert.localState?.status || alert.status;
+  const effectiveStatus = alert.status;
   
   return (
     <div className={`alert-list-item severity-${alert.severity} ${isSelected ? 'selected' : ''}`}>
@@ -644,9 +679,9 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
             {alert.ownerName && (
               <span className="alert-owner">👤 {alert.ownerName}</span>
             )}
-            {alert.localState?.playbookId && (
+            {typeof alert.playbookProgress === 'number' && alert.playbookProgress > 0 && (
               <span className="playbook-progress-badge">
-                📋 Playbook {alert.localState.playbookProgress || 0}%
+                📋 Playbook {alert.playbookProgress}%
               </span>
             )}
           </div>
@@ -703,7 +738,7 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
             </div>
           )}
           
-          {alert.recommendedPlaybook && !alert.localState?.playbookId && (
+          {alert.recommendedPlaybook && !alert.playbookId && (
             <div className="recommended-playbook">
               <strong>Recommended Playbook:</strong>
               <div className="playbook-preview">
@@ -762,39 +797,39 @@ function AlertActionButtons({ alert, onStateChange }: AlertActionButtonsProps) {
   const [showNoteInput, setShowNoteInput] = useState(false);
   const [noteText, setNoteText] = useState('');
   
-  const effectiveStatus = alert.localState?.status || alert.status;
+  const effectiveStatus = alert.status;
   
-  const handleAcknowledge = () => {
-    acknowledgeAlert(alert.id);
+  const handleAcknowledge = async () => {
+    await acknowledgeAlert(alert.id);
     onStateChange();
   };
   
-  const handleSnooze = (days: number, reason?: string) => {
-    snoozeAlert(alert.id, days, reason);
+  const handleSnooze = async (days: number, reason?: string) => {
+    await snoozeAlert(alert.id, days, reason);
     setShowSnoozeModal(false);
     onStateChange();
   };
   
-  const handleResolve = (outcome: OutcomeResult, notes?: string) => {
-    resolveAlert(alert.id, outcome, notes);
+  const handleResolve = async (outcome: OutcomeResult, notes?: string) => {
+    await resolveAlert(alert.id, outcome, notes);
     setShowResolveModal(false);
     onStateChange();
   };
   
-  const handleReopen = () => {
-    reopenAlert(alert.id);
+  const handleReopen = async () => {
+    await reopenAlert(alert.id);
     onStateChange();
   };
   
-  const handleAssign = (assigneeId: string, assigneeName: string) => {
-    assignAlert(alert.id, assigneeId, assigneeName);
+  const handleAssign = async (assigneeId: string, assigneeName: string) => {
+    await assignAlert(alert.id, assigneeId, assigneeName);
     setShowAssignModal(false);
     onStateChange();
   };
   
-  const handleAddNote = () => {
+  const handleAddNote = async () => {
     if (noteText.trim()) {
-      addAlertNote(alert.id, noteText.trim());
+      await addAlertNote(alert.id, noteText.trim());
       setNoteText('');
       setShowNoteInput(false);
       onStateChange();
@@ -845,7 +880,7 @@ function AlertActionButtons({ alert, onStateChange }: AlertActionButtonsProps) {
         View Account
       </Link>
       
-      {alert.recommendedPlaybook && !alert.localState?.playbookId && (
+      {alert.recommendedPlaybook && !alert.playbookId && (
         <button className="btn-outline" onClick={handleStartPlaybook}>
           📋 Start Playbook
         </button>
@@ -1073,14 +1108,13 @@ function AlertDetailPanel({ alertId, alerts, onClose, onStateChange }: AlertDeta
   const alert = alerts.find(a => a.id === alertId);
   const [activeTab, setActiveTab] = useState<'details' | 'playbook' | 'history'>('details');
   
-  const notes = getAlertNotes(alertId);
-  const actionLog = getAlertActionLog(alertId);
+  const notes = getAlertNotes(alertId, alerts);
+  const actionLog = getAlertActionLog(alertId, alerts);
   
   if (!alert) return null;
   
-  const playbook = alert.localState?.playbookId 
-    ? PLAYBOOKS.find(p => p.id === alert.localState?.playbookId)
-    : alert.recommendedPlaybook;
+  const playbook = alert.recommendedPlaybook 
+    || PLAYBOOKS.find(p => p.alertTypes?.includes(alert.type) || p.id === alert.type);
   
   return (
     <div className="alert-detail-overlay" onClick={onClose}>
@@ -1266,11 +1300,21 @@ interface PlaybookTabContentProps {
 }
 
 function PlaybookTabContent({ alert, playbook, onStateChange }: PlaybookTabContentProps) {
-  const isActive = !!alert.localState?.playbookId;
-  const progress = alert.localState?.playbookProgress || 0;
-  
-  // Track completed tasks locally
+  const [isActive, setIsActive] = useState(!!alert.playbookId);
+  const [progress, setProgress] = useState(alert.playbookProgress || 0);
   const [completedTasks, setCompletedTasks] = useState<Set<number>>(new Set());
+  const tasks = playbook?.tasks || [];
+
+  useEffect(() => {
+    setIsActive(!!alert.playbookId);
+    setProgress(alert.playbookProgress || 0);
+    if (tasks.length && alert.playbookProgress) {
+      const completedCount = Math.round((alert.playbookProgress / 100) * tasks.length);
+      const initial = new Set<number>();
+      for (let i = 0; i < completedCount; i++) initial.add(i);
+      setCompletedTasks(initial);
+    }
+  }, [alert.playbookId, alert.playbookProgress, tasks.length]);
   
   const handleToggleTask = (taskIndex: number) => {
     const newCompleted = new Set(completedTasks);
@@ -1281,21 +1325,23 @@ function PlaybookTabContent({ alert, playbook, onStateChange }: PlaybookTabConte
     }
     setCompletedTasks(newCompleted);
     
-    if (playbook) {
-      const newProgress = Math.round((newCompleted.size / playbook.tasks.length) * 100);
-      updatePlaybookProgress(alert.id, newProgress);
-      
-      if (newProgress === 100) {
-        completePlaybook(alert.id);
-      }
-      
-      onStateChange();
+    if (!playbook || tasks.length === 0) return;
+    const newProgress = Math.round((newCompleted.size / tasks.length) * 100);
+    setProgress(newProgress);
+    updatePlaybookProgress(alert.id, newProgress);
+    
+    if (newProgress === 100) {
+      completePlaybook(alert.id);
     }
+    
+    onStateChange();
   };
   
   const handleStartPlaybook = () => {
     if (playbook) {
       startPlaybook(alert.id, playbook.id);
+      setIsActive(true);
+      setProgress(0);
       onStateChange();
     }
   };
@@ -1343,9 +1389,9 @@ function PlaybookTabContent({ alert, playbook, onStateChange }: PlaybookTabConte
       )}
       
       <section className="detail-section">
-        <h4>Tasks ({completedTasks.size}/{playbook.tasks.length})</h4>
+        <h4>Tasks ({completedTasks.size}/{tasks.length})</h4>
         <div className="playbook-tasks">
-          {playbook.tasks.map((task, index) => (
+          {tasks.map((task, index) => (
             <div 
               key={index} 
               className={`playbook-task ${completedTasks.has(index) ? 'completed' : ''} ${!isActive ? 'disabled' : ''}`}

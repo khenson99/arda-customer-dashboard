@@ -33,6 +33,7 @@ interface AlertWithAccount extends Alert {
   snoozeReason?: string;
   resolvedBy?: string;
   notes?: AlertNote[];
+  actionLog?: AlertActionLog[];
 }
 
 interface AlertsResponse {
@@ -55,10 +56,13 @@ interface AlertUpdateRequest {
   outcome?: AlertOutcome;
   assignedTo?: string;
   assignedToName?: string;
+  playbookId?: string;
+  playbookProgress?: number;
   note?: {
     content: string;
     createdBy: string;
   };
+  actionLogEntry?: AlertActionLog;
 }
 
 interface AlertNote {
@@ -67,6 +71,16 @@ interface AlertNote {
   content: string;
   createdBy: string;
   createdAt: string;
+}
+
+interface AlertActionLog {
+  id: string;
+  alertId: string;
+  action: 'acknowledged' | 'snoozed' | 'resolved' | 'assigned' | 'note_added' | 'reopened' | 'playbook_started' | 'playbook_completed';
+  actor: string;
+  actorName?: string;
+  timestamp: string;
+  details?: Record<string, unknown>;
 }
 
 interface AlertUpdateResponse {
@@ -91,6 +105,9 @@ interface StoredAlertUpdate {
   snoozeReason?: string;
   resolvedBy?: string;
   notes?: AlertNote[];
+  actionLog?: AlertActionLog[];
+  playbookId?: string;
+  playbookProgress?: number;
 }
 
 const inMemoryAlertUpdates = new Map<string, StoredAlertUpdate>();
@@ -139,6 +156,9 @@ async function loadAlertUpdates(alertIds: string[]): Promise<Map<string, StoredA
       ownerName: row.owner_name,
       slaStatus: row.sla_status as SLAStatus,
       notes: row.notes || undefined,
+      actionLog: row.action_log || undefined,
+      playbookId: row.playbook_id || undefined,
+      playbookProgress: row.playbook_progress || undefined,
     });
   });
 
@@ -174,6 +194,9 @@ async function persistAlertUpdate(
     owner_name: update.ownerName,
     sla_status: update.slaStatus,
     notes: update.notes,
+    action_log: update.actionLog,
+    playbook_id: update.playbookId,
+    playbook_progress: update.playbookProgress,
     updated_at: new Date().toISOString(),
   };
 
@@ -198,7 +221,6 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  if (!requireApiKey(req, res)) return;
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, OPTIONS');
@@ -211,6 +233,10 @@ export default async function handler(
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+  
+  if (!requireApiKey(req, res)) {
+    return;
   }
   
   // Handle PATCH requests for updating alerts
@@ -399,14 +425,17 @@ export default async function handler(
           snoozedUntil: update.snoozedUntil || alert.snoozedUntil,
           snoozeReason: update.snoozeReason || alert.snoozeReason,
           resolvedAt: update.resolvedAt || alert.resolvedAt,
-          resolvedBy: update.resolvedBy || alert.resolvedBy,
-          outcome: update.outcome || alert.outcome,
-          ownerId: update.ownerId || alert.ownerId,
-          ownerName: update.ownerName || alert.ownerName,
-          slaStatus: update.slaStatus || alert.slaStatus,
-          notes: update.notes || alert.notes,
-        };
-      });
+      resolvedBy: update.resolvedBy || alert.resolvedBy,
+      outcome: update.outcome || alert.outcome,
+      ownerId: update.ownerId || alert.ownerId,
+      ownerName: update.ownerName || alert.ownerName,
+      slaStatus: update.slaStatus || alert.slaStatus,
+      notes: update.notes || alert.notes,
+      actionLog: update.actionLog || alert.actionLog,
+      playbookId: update.playbookId || alert.playbookId,
+      playbookProgress: update.playbookProgress ?? alert.playbookProgress,
+    };
+  });
 
       // Build response
       baseResponse = {
@@ -495,7 +524,7 @@ async function handlePatchAlert(
     const updatedFields: string[] = [];
     
     // Get existing updates or create new (pull from in-memory cache first; Supabase fetch happens lazily on GET)
-    const existing = inMemoryAlertUpdates.get(alertId) || { notes: [] };
+    const existing = inMemoryAlertUpdates.get(alertId) || { notes: [], actionLog: [] };
     
     // Apply updates
     if (updateData.status) {
@@ -542,6 +571,16 @@ async function handlePatchAlert(
       existing.ownerName = updateData.assignedToName;
       updatedFields.push('ownerName');
     }
+
+    if (updateData.playbookId) {
+      existing.playbookId = updateData.playbookId;
+      updatedFields.push('playbookId');
+    }
+
+    if (typeof updateData.playbookProgress === 'number') {
+      existing.playbookProgress = updateData.playbookProgress;
+      updatedFields.push('playbookProgress');
+    }
     
     // Handle adding a note
     let newNote: AlertNote | undefined;
@@ -559,6 +598,15 @@ async function handlePatchAlert(
       }
       existing.notes.push(newNote);
       updatedFields.push('notes');
+    }
+
+    // Append action log entry if provided
+    if (updateData.actionLogEntry) {
+      if (!existing.actionLog) {
+        existing.actionLog = [];
+      }
+      existing.actionLog.push(updateData.actionLogEntry);
+      updatedFields.push('actionLog');
     }
     
     // Persist updates
