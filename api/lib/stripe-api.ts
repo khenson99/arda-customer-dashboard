@@ -139,7 +139,7 @@ export interface StripeEnrichedMetrics {
 /**
  * Create headers for Stripe API calls
  */
-function createHeaders(apiKey: string): HeadersInit {
+function createHeaders(apiKey: string): Record<string, string> {
   return {
     'Authorization': `Bearer ${apiKey}`,
     'Content-Type': 'application/x-www-form-urlencoded',
@@ -171,7 +171,7 @@ async function stripeGet<T>(
     throw new Error(`Stripe API Error: ${response.status} ${response.statusText} - ${errorBody}`);
   }
 
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 /**

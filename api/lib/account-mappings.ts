@@ -319,7 +319,7 @@ export async function fetchCodaOverrides(
       return overrides;
     }
     
-    const tables = await tablesResponse.json();
+    const tables = await tablesResponse.json() as { items?: Array<{ id: string; name: string }> };
     const overridesTable = tables.items?.find(
       (t: { name: string }) => 
         t.name === 'Customer Overrides' || 
@@ -354,7 +354,7 @@ export async function fetchCodaOverrides(
         return overrides;
       }
       
-      const rows = await rowsResponse.json();
+      const rows = await rowsResponse.json() as { items?: Array<{ values: Record<string, unknown> }>; nextPageToken?: string };
       
       for (const row of rows.items || []) {
         const values = row.values as Record<string, unknown>;

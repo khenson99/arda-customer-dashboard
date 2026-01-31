@@ -19,7 +19,7 @@ interface QueryResult<T> {
 }
 
 // Create headers for Arda API calls
-function createHeaders(apiKey: string, author: string): HeadersInit {
+function createHeaders(apiKey: string, author: string): Record<string, string> {
   return {
     'Authorization': `Bearer ${apiKey}`,
     'X-Author': author,
@@ -56,7 +56,7 @@ async function queryEntity<T>(
     throw new Error(`Arda API Error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
-  return response.json();
+  return response.json() as Promise<QueryResult<T>>;
 }
 
 // Fetch all pages of an entity (with safety limit)

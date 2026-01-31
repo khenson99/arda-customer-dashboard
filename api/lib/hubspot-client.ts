@@ -170,7 +170,7 @@ export function isHubSpotConfigured(): boolean {
 /**
  * Create headers for HubSpot API requests
  */
-function createHeaders(accessToken: string): HeadersInit {
+function createHeaders(accessToken: string): Record<string, string> {
   return {
     'Authorization': `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
@@ -203,7 +203,7 @@ async function hubspotGet<T>(
     throw new Error(`HubSpot API Error: ${response.status} ${response.statusText} - ${errorBody}`);
   }
 
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 /**
@@ -227,7 +227,7 @@ async function hubspotPost<T>(
     throw new Error(`HubSpot API Error: ${response.status} ${response.statusText} - ${errorBody}`);
   }
 
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 // ============================================================================

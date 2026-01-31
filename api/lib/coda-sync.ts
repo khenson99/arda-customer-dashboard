@@ -140,7 +140,7 @@ async function codaFetch<T>(
       return null;
     }
 
-    return response.json();
+    return response.json() as Promise<T>;
   } catch (error) {
     console.error('Coda API request failed:', error);
     return null;
@@ -515,7 +515,7 @@ export async function upsertAccountOverride(
     cells.push({ column: 'Tags', value: override.tags.join(', ') });
   }
   if (override.isExcluded !== undefined) {
-    cells.push({ column: 'Excluded', value: override.isExcluded });
+    cells.push({ column: 'Excluded', value: String(override.isExcluded) });
   }
 
   // Upsert the row
