@@ -12,6 +12,7 @@ import type { AccountSummary, LifecycleStage, OnboardingStatus } from '../../src
 import { 
   aggregateByTenant, 
   fetchTenants,
+  extractEmailInfo,
   type ArdaTenant,
 } from '../lib/arda-api';
 import { calculateHealthScore, type HealthScoringInput } from '../lib/health-scoring';
