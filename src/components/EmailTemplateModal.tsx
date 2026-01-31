@@ -64,6 +64,12 @@ export function EmailTemplateModal({
     }
   }, [defaultCategory]);
 
+  useEffect(() => {
+    if (isOpen) {
+      setRecipientEmail(accountData?.primaryContactEmail || '');
+    }
+  }, [isOpen, accountData?.primaryContactEmail]);
+
   // Filter templates by category
   const filteredTemplates = useMemo(() => {
     if (selectedCategory === 'all') {
@@ -149,6 +155,8 @@ export function EmailTemplateModal({
 
   if (!isOpen) return null;
 
+  const hasRecipient = recipientEmail.trim().length > 0;
+
   return (
     <div className="email-modal-overlay" onClick={handleClose}>
       <div className="email-modal" onClick={e => e.stopPropagation()}>
@@ -214,6 +222,12 @@ export function EmailTemplateModal({
                   />
                 </div>
 
+                {!hasRecipient && (
+                  <div className="email-recipient-warning">
+                    Add a primary contact email to enable one-click sending.
+                  </div>
+                )}
+
                 {/* Subject Preview */}
                 <div className="email-preview-field">
                   <label>Subject:</label>
@@ -247,7 +261,7 @@ export function EmailTemplateModal({
                   <button
                     className="btn-primary email-action-btn"
                     onClick={handleOpenInEmailClient}
-                    disabled={!recipientEmail}
+                    disabled={!hasRecipient}
                   >
                     📤 Open in Email Client
                   </button>

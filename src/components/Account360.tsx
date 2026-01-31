@@ -151,7 +151,10 @@ export function Account360() {
   // Build account data for email templates
   const emailAccountData = useMemo(() => {
     if (!account) return undefined;
-    const primaryContact = account.stakeholders?.find(s => s.isPrimary);
+    const primaryContact =
+      account.stakeholders?.find(s => s.isPrimary) ||
+      account.stakeholders?.[0] ||
+      hubspotData.contacts?.[0];
     return {
       name: account.name,
       primaryContactEmail: primaryContact?.email,
@@ -168,7 +171,7 @@ export function Account360() {
       kanbanCardCount: account.usage?.kanbanCardCount,
       orderCount: account.usage?.orderCount,
     };
-  }, [account]);
+  }, [account, hubspotData]);
   
   // Open email modal with optional category filter
   const openEmailModal = useCallback((category?: TemplateCategory) => {

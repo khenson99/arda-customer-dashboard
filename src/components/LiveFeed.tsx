@@ -316,7 +316,7 @@ export function LiveFeed() {
                   {mostActiveToday.slice(0, 3).map((customer, i) => (
                     <Link 
                       key={customer.id} 
-                      to={`/customer/${customer.id}`}
+                      to={`/account/${customer.id}`}
                       className="most-active-customer"
                       title={`${customer.name}: ${customer.count} events`}
                     >
@@ -545,7 +545,7 @@ function FeedEntry({
       
       <div className="feed-content">
         <div className="feed-main">
-          <Link to={`/customer/${event.tenantId}`} className="feed-customer">
+          <Link to={`/account/${event.tenantId}`} className="feed-customer">
             {event.tenantName}
           </Link>
           <span className="feed-action">{getEventAction(event.type)}</span>
@@ -594,7 +594,7 @@ function FeedEntry({
             
             {/* Quick Actions */}
             <div className="quick-actions">
-              <Link to={`/customer/${event.tenantId}`} className="quick-action-btn">
+              <Link to={`/account/${event.tenantId}`} className="quick-action-btn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                   <circle cx="12" cy="7" r="4" />

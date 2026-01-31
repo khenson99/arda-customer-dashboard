@@ -484,12 +484,23 @@ async function fetchCustomerMetricsFromServer(): Promise<CustomerMetrics[]> {
     fetchAlerts(),
   ]);
 
-  const alertsByAccountId = new Map<string, Alert[]>();
+  const alertsByAccountId = new Map<string, CustomerMetrics['alerts']>();
   for (const alert of alertsResponse.alerts) {
     if (!alertsByAccountId.has(alert.accountId)) {
       alertsByAccountId.set(alert.accountId, []);
     }
-    alertsByAccountId.get(alert.accountId)!.push(alert);
+    const severity =
+      alert.severity === 'critical'
+        ? 'critical'
+        : alert.severity === 'low'
+          ? 'info'
+          : 'warning';
+    alertsByAccountId.get(alert.accountId)!.push({
+      type: alert.type as CustomerMetrics['alerts'][number]['type'],
+      severity,
+      message: alert.title || alert.description,
+      suggestedAction: alert.suggestedAction || '',
+    });
   }
 
   const now = Date.now();
@@ -528,6 +539,12 @@ async function fetchCustomerMetricsFromServer(): Promise<CustomerMetrics[]> {
       accountAgeDays,
       users: [],
       activityTimeline: buildActivityTimelineFromTrend(account.activityTrend || []),
+      // Additional fields used by legacy UI mappings
+      arr: account.arr,
+      daysToRenewal: account.daysToRenewal,
+      activeUsersLast30Days: account.activeUsers,
+      daysSinceLastActivity: account.daysSinceLastActivity,
+      activityTrend: account.activityTrend || [],
     } as CustomerMetrics;
   });
 }

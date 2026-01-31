@@ -80,7 +80,7 @@ function App() {
         <div className="dashboard-content">
           <div className="error-message">
             <div className="error-icon">⚠️</div>
-            <p>Failed to load customer data. Make sure your Arda API key is set.</p>
+            <p>Failed to load customer data. Please try again.</p>
           </div>
         </div>
       </div>

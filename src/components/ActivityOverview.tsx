@@ -154,7 +154,7 @@ export function ActivityOverview() {
                   {data.byCustomer.map((customer) => (
                     <tr key={customer.tenantId} className="customer-row">
                       <td>
-                        <Link to={`/customer/${customer.tenantId}`} className="customer-link">
+                        <Link to={`/account/${customer.tenantId}`} className="customer-link">
                           {customer.tenantName}
                         </Link>
                       </td>

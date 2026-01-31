@@ -8,9 +8,6 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { EnvGuard } from './components/EnvGuard'
 
 // Lazy load components for code splitting
-const CustomerDetail = lazy(() =>
-  import('./components/CustomerDetail').then((m) => ({ default: (m as any).CustomerDetail || (m as any).default }))
-);
 const Account360 = lazy(() =>
   import('./components/Account360').then((m) => ({ default: (m as any).Account360 || (m as any).default }))
 );
@@ -56,8 +53,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/insights" element={<InsightsDashboard />} />
               {/* New Account 360 view - enhanced detail page */}
               <Route path="/account/:tenantId" element={<Account360 />} />
-              {/* Legacy customer detail route - still supported */}
-              <Route path="/customer/:tenantId" element={<CustomerDetail />} />
+              {/* Legacy customer detail route - forward to Account 360 */}
+              <Route path="/customer/:tenantId" element={<Account360 />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
