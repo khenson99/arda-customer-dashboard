@@ -11,11 +11,19 @@ export interface TenantInfo {
   tier?: 'enterprise' | 'growth' | 'starter' | 'trial';
   segment?: 'enterprise' | 'mid_market' | 'smb';
   notes?: string;
+  stripeCustomerId?: string;  // Stripe customer ID for billing lookup
+  stripeEmail?: string;       // Email to use for Stripe lookup
+  domain?: string;            // Company domain for Stripe email search
 }
 
 /**
  * Known tenant ID to name mappings.
  * Add new entries as tenants are identified.
+ * 
+ * For Stripe integration, add:
+ * - stripeCustomerId: The Stripe customer ID (cus_xxx)
+ * - stripeEmail: The email to use for Stripe lookup
+ * - domain: The company domain for Stripe email search
  */
 export const TENANT_NAMES: Record<string, TenantInfo> = {
   // Elliott Equipment Company
@@ -24,6 +32,7 @@ export const TENANT_NAMES: Record<string, TenantInfo> = {
     csm: 'Customer Success',
     tier: 'growth',
     segment: 'mid_market',
+    domain: 'elliottequipment.com',
   },
   // Trace Audio (ben@traceaudio.com tenant)
   '75980a19-64ec-4f1a-a2ea-0446ea937b16': {
@@ -31,12 +40,15 @@ export const TENANT_NAMES: Record<string, TenantInfo> = {
     csm: 'Kyle',
     tier: 'growth',
     segment: 'smb',
+    domain: 'traceaudio.com',
+    stripeEmail: 'ben@traceaudio.com',
   },
   // US Offsite
   'c35bb200-ce7f-4280-9108-f61227127a98': {
     name: 'US Offsite',
     tier: 'enterprise',
     segment: 'enterprise',
+    domain: 'usoffsite.com',
   },
   // Add more tenant mappings as discovered...
 };

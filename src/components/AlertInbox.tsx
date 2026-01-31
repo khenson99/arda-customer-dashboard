@@ -613,6 +613,7 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
           }}
           className="alert-checkbox"
           onClick={(e) => e.stopPropagation()}
+          aria-label={`Select alert: ${alert.title}`}
         />
         
         <div className={`alert-severity-indicator severity-${alert.severity}`} />
@@ -934,13 +935,15 @@ function SnoozeModal({ onSnooze, onClose }: SnoozeModalProps) {
         
         {showCustom && (
           <div className="custom-snooze">
-            <label>Days:</label>
+            <label htmlFor="snooze-days">Days:</label>
             <input
+              id="snooze-days"
               type="number"
               value={customDays}
               onChange={(e) => setCustomDays(Number(e.target.value))}
               min={1}
               max={90}
+              aria-label="Number of days to snooze"
             />
           </div>
         )}

@@ -213,9 +213,26 @@ export default async function handler(
     // Fetch Stripe data for commercial metrics enrichment
     // Try to match by Stripe customer ID first, then by email domain
     const emailInfo2 = extractEmailInfo(tenantInfo.payload.tenantName);
+    
+    // Get tenant-specific Stripe info from TENANT_NAMES
+    const { TENANT_NAMES } = await import('../../lib/tenant-names.js');
+    const tenantNameInfo = TENANT_NAMES[tenantId];
+    
+    // Priority: 1) TENANT_NAMES stripeEmail, 2) extracted email from tenant name
+    const stripeEmail = tenantNameInfo?.stripeEmail || emailInfo2?.email;
+    const stripeCustomerId = tenantNameInfo?.stripeCustomerId || mapping?.stripeId;
+    
+    console.log('[Stripe Debug] Tenant Stripe lookup:', {
+      tenantId,
+      tenantName: tenantInfo.payload.tenantName,
+      stripeEmail,
+      stripeCustomerId,
+      tenantNameInfo: tenantNameInfo ? { name: tenantNameInfo.name, domain: tenantNameInfo.domain } : null,
+    });
+    
     const stripeData = await fetchStripeDataForAccount(
-      emailInfo2?.email,
-      mapping?.stripeId
+      stripeEmail,
+      stripeCustomerId
     );
     
     // Fetch HubSpot data for stakeholder enrichment

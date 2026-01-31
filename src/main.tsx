@@ -26,6 +26,9 @@ const AlertInbox = lazy(() =>
 const StatusPage = lazy(() =>
   import('./components/StatusPage').then((m) => ({ default: (m as any).StatusPage || (m as any).default }))
 );
+const InsightsDashboard = lazy(() =>
+  import('./components/InsightsDashboard').then((m) => ({ default: (m as any).InsightsDashboard || (m as any).default }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +53,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/feed" element={<LiveFeed />} />
               <Route path="/alerts" element={<AlertInbox />} />
               <Route path="/status" element={<StatusPage />} />
+              <Route path="/insights" element={<InsightsDashboard />} />
               {/* New Account 360 view - enhanced detail page */}
               <Route path="/account/:tenantId" element={<Account360 />} />
               {/* Legacy customer detail route - still supported */}

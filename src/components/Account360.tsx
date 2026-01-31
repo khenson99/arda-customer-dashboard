@@ -47,6 +47,7 @@ import {
   getOverdueMilestones,
   getDaysRemaining,
 } from '../lib/success-plans';
+import { AccountInsightsWidget } from './AccountInsightsWidget';
 import {
   useCommercialMetrics,
   formatCurrency,
@@ -437,10 +438,8 @@ function OverviewTab({ account, alerts, onOpenEmailModal, onSwitchToSuccessPlan,
                           commercial?.paymentStatus === 'at_risk' ||
                           (commercial?.overdueAmount && commercial.overdueAmount > 0);
   
-  // Load success plan from localStorage
-  const STORAGE_KEY = `arda_success_plan_${tenantId}`;
-  const storedPlan = localStorage.getItem(STORAGE_KEY);
-  const successPlan: SuccessPlan | null = storedPlan ? JSON.parse(storedPlan) : null;
+  // Load success plan using Supabase hook with localStorage fallback
+  const { successPlan } = useSuccessPlan(tenantId);
   
   // Get overdue milestones for alerts
   const overdueMilestones = successPlan ? getOverdueMilestones(successPlan) : [];
@@ -526,6 +525,9 @@ function OverviewTab({ account, alerts, onOpenEmailModal, onSwitchToSuccessPlan,
           </div>
         </div>
       )}
+      
+      {/* AI Insights Widget */}
+      <AccountInsightsWidget account={account} />
       
       {/* Success Plan Summary Widget + Key Metrics Grid */}
       <div className="overview-top-section">
@@ -1912,77 +1914,43 @@ function SuccessPlanTab({ tenantId }: { tenantId: string }) {
   const nextMilestone = getNextMilestone(successPlan);
   const daysRemaining = getDaysRemaining(successPlan);
   
-  const updateMilestoneStatus = (milestoneId: string, newStatus: MilestoneStatus) => {
+  const updateMilestoneStatus = async (milestoneId: string, newStatus: MilestoneStatus) => {
     const now = new Date().toISOString();
-    setSuccessPlan(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        updatedAt: now,
-        milestones: prev.milestones.map(m => 
-          m.id === milestoneId 
-            ? { 
-                ...m, 
-                status: newStatus,
-                completedDate: newStatus === 'completed' ? now : undefined,
-              }
-            : m
-        ),
-      };
-    });
+    const updates: Partial<Milestone> = {
+      status: newStatus,
+      completedDate: newStatus === 'completed' ? now : undefined,
+    };
+    await updateMilestoneInDb(milestoneId, updates);
     setSelectedMilestone(null);
   };
   
-  const updateMilestone = (milestoneId: string, updates: Partial<Milestone>) => {
-    const now = new Date().toISOString();
-    setSuccessPlan(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        updatedAt: now,
-        milestones: prev.milestones.map(m => 
-          m.id === milestoneId ? { ...m, ...updates } : m
-        ),
-      };
+  const updateMilestone = async (milestoneId: string, updates: Partial<Milestone>) => {
+    await updateMilestoneInDb(milestoneId, updates);
+  };
+  
+  const addBlocker = async (milestoneId: string, blocker: string) => {
+    if (!blocker.trim() || !successPlan) return;
+    const milestone = successPlan.milestones.find(m => m.id === milestoneId);
+    if (!milestone) return;
+    
+    await updateMilestoneInDb(milestoneId, {
+      blockers: [...(milestone.blockers || []), blocker.trim()],
+      status: 'blocked' as MilestoneStatus,
     });
   };
   
-  const addBlocker = (milestoneId: string, blocker: string) => {
-    if (!blocker.trim()) return;
-    const now = new Date().toISOString();
-    setSuccessPlan(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        updatedAt: now,
-        milestones: prev.milestones.map(m => 
-          m.id === milestoneId 
-            ? { ...m, blockers: [...(m.blockers || []), blocker.trim()], status: 'blocked' as MilestoneStatus }
-            : m
-        ),
-      };
-    });
-  };
-  
-  const removeBlocker = (milestoneId: string, blockerIndex: number) => {
-    const now = new Date().toISOString();
-    setSuccessPlan(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        updatedAt: now,
-        milestones: prev.milestones.map(m => {
-          if (m.id !== milestoneId) return m;
-          const newBlockers = [...(m.blockers || [])];
-          newBlockers.splice(blockerIndex, 1);
-          return { 
-            ...m, 
-            blockers: newBlockers,
-            // If no more blockers and was blocked, set to in_progress
-            status: newBlockers.length === 0 && m.status === 'blocked' ? 'in_progress' : m.status,
-          };
-        }),
-      };
+  const removeBlocker = async (milestoneId: string, blockerIndex: number) => {
+    if (!successPlan) return;
+    const milestone = successPlan.milestones.find(m => m.id === milestoneId);
+    if (!milestone) return;
+    
+    const newBlockers = [...(milestone.blockers || [])];
+    newBlockers.splice(blockerIndex, 1);
+    
+    await updateMilestoneInDb(milestoneId, {
+      blockers: newBlockers,
+      // If no more blockers and was blocked, set to in_progress
+      status: newBlockers.length === 0 && milestone.status === 'blocked' ? 'in_progress' : milestone.status,
     });
   };
   
@@ -2310,49 +2278,48 @@ function OutreachTab({ tenantId, onOpenEmailModal }: {
   tenantId: string;
   onOpenEmailModal: (category?: TemplateCategory) => void;
 }) {
-  const SENT_EMAILS_KEY = `arda_sent_emails_${tenantId}`;
-  const DRAFT_EMAILS_KEY = `arda_draft_emails_${tenantId}`;
+  // Use Supabase hook with localStorage fallback
+  const {
+    sentEmails: rawSentEmails,
+    draftEmails: rawDraftEmails,
+    isLoading,
+    isFromCache,
+    deleteDraft,
+    markDraftAsSent,
+  } = useEmails(tenantId);
   
-  // Load sent emails from localStorage
-  const [sentEmails, setSentEmails] = useState<SentEmail[]>(() => {
-    const stored = localStorage.getItem(SENT_EMAILS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  });
+  // Map to expected types
+  const sentEmails: SentEmail[] = rawSentEmails.map(e => ({
+    id: e.id,
+    accountId: e.accountId,
+    templateId: e.templateId,
+    templateName: e.templateName,
+    recipientEmail: e.recipientEmail,
+    subject: e.subject,
+    sentAt: e.sentAt,
+    category: e.category as TemplateCategory,
+  }));
   
-  // Load draft emails from localStorage
-  const [draftEmails, setDraftEmails] = useState<DraftEmail[]>(() => {
-    const stored = localStorage.getItem(DRAFT_EMAILS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  });
-  
-  // Persist to localStorage whenever emails change
-  useEffect(() => {
-    localStorage.setItem(SENT_EMAILS_KEY, JSON.stringify(sentEmails));
-  }, [sentEmails, SENT_EMAILS_KEY]);
-  
-  useEffect(() => {
-    localStorage.setItem(DRAFT_EMAILS_KEY, JSON.stringify(draftEmails));
-  }, [draftEmails, DRAFT_EMAILS_KEY]);
+  const draftEmails: DraftEmail[] = rawDraftEmails.map(d => ({
+    id: d.id,
+    accountId: d.accountId,
+    templateId: d.templateId,
+    templateName: d.templateName,
+    category: d.category as TemplateCategory | undefined,
+    recipientEmail: d.recipientEmail,
+    subject: d.subject,
+    body: d.body,
+    savedAt: d.savedAt,
+  }));
   
   // Delete a draft
-  const handleDeleteDraft = (draftId: string) => {
-    setDraftEmails(prev => prev.filter(d => d.id !== draftId));
+  const handleDeleteDraft = async (draftId: string) => {
+    await deleteDraft(draftId);
   };
   
   // Log a sent email (from draft or manual entry)
-  const handleLogSentEmail = (draft: DraftEmail) => {
-    const sentEmail: SentEmail = {
-      id: `sent_${Date.now()}`,
-      accountId: tenantId || '',
-      templateId: draft.templateId || 'manual',
-      templateName: draft.templateName || 'Manual Email',
-      category: draft.category || 'check_in',
-      subject: draft.subject,
-      recipientEmail: draft.recipientEmail,
-      sentAt: new Date().toISOString(),
-    };
-    setSentEmails(prev => [sentEmail, ...prev]);
-    setDraftEmails(prev => prev.filter(d => d.id !== draft.id));
+  const handleLogSentEmail = async (draft: DraftEmail) => {
+    await markDraftAsSent(draft.id);
   };
   
   // Template category quick access buttons
