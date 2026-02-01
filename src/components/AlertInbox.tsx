@@ -60,6 +60,7 @@ type SLAInfo = {
   timeRemaining: string;
   percentRemaining: number;
 };
+type DetailTab = 'details' | 'playbook' | 'history';
 
 const ACTION_LABELS: Record<AlertActionLog['action'], string> = {
   acknowledged: 'Acknowledged',
@@ -84,6 +85,7 @@ const ACTION_ICONS: Record<AlertActionLog['action'], string> = {
 };
 
 interface EnrichedAlert extends AlertWithAccount {
+
   slaInfo: SLAInfo;
   recommendedPlaybook?: PlaybookDefinition;
 }
@@ -107,6 +109,12 @@ export function AlertInbox() {
   
   // Detail panel state
   const [detailPanelAlertId, setDetailPanelAlertId] = useState<string | null>(null);
+  const [detailPanelTab, setDetailPanelTab] = useState<DetailTab>('details');
+
+  const openDetailPanel = useCallback((alertId: string, tab: DetailTab = 'details') => {
+    setDetailPanelAlertId(alertId);
+    setDetailPanelTab(tab);
+  }, [setDetailPanelAlertId, setDetailPanelTab]);
   const listRef = useRef<HTMLDivElement | null>(null);
   
   // Fetch alerts from the dedicated alerts API
@@ -518,18 +526,18 @@ export function AlertInbox() {
                   const alert = sortedAlerts[virtualRow.index];
                   if (!alert) return null;
                   return (
-                    <div
-                      key={alert.id}
-                      className="alerts-list-virtual-row"
-                      style={{ transform: `translateY(${virtualRow.start}px)` }}
-                    >
-                      <AlertListItem
-                        alert={alert}
-                        isSelected={selectedAlertIds.has(alert.id)}
-                        onToggleSelect={() => handleToggleSelect(alert.id)}
-                        onOpenDetail={() => setDetailPanelAlertId(alert.id)}
-                        onStateChange={refreshAlerts}
-                      />
+                      <div
+                        key={alert.id}
+                        className="alerts-list-virtual-row"
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      >
+                        <AlertListItem
+                          alert={alert}
+                          isSelected={selectedAlertIds.has(alert.id)}
+                          onToggleSelect={() => handleToggleSelect(alert.id)}
+                          onOpenDetail={(tab) => openDetailPanel(alert.id, tab)}
+                          onStateChange={refreshAlerts}
+                        />
                     </div>
                   );
                 })}
@@ -550,7 +558,11 @@ export function AlertInbox() {
         <AlertDetailPanel
           alertId={detailPanelAlertId}
           alerts={enrichedAlerts}
-          onClose={() => setDetailPanelAlertId(null)}
+          onClose={() => {
+            setDetailPanelAlertId(null);
+            setDetailPanelTab('details');
+          }}
+          initialTab={detailPanelTab}
           onStateChange={refreshAlerts}
         />
       )}
@@ -650,7 +662,7 @@ interface AlertListItemProps {
   alert: EnrichedAlert;
   isSelected: boolean;
   onToggleSelect: () => void;
-  onOpenDetail: () => void;
+  onOpenDetail: (tab?: DetailTab) => void;
   onStateChange: () => void;
 }
 
@@ -740,7 +752,7 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
             className="detail-btn"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenDetail();
+              onOpenDetail('details');
             }}
           >
             Details →
@@ -797,22 +809,34 @@ function AlertListItem({ alert, isSelected, onToggleSelect, onOpenDetail, onStat
             <div className="alert-action-log-summary">
               <strong>Recent Activity</strong>
               <div className="alert-action-log-items">
-                {alert.actionLog.slice(-3).reverse().map(entry => (
-                  <div key={entry.id} className="alert-action-log-item">
-                    <span className="history-icon">{ACTION_ICONS[entry.action]}</span>
-                    <div className="history-content">
-                      <div className="history-row">
-                        <span className="history-action">{ACTION_LABELS[entry.action]}</span>
-                        <span className="history-time">{formatRelativeTime(entry.timestamp)}</span>
+                {alert.actionLog.slice(-3).reverse().map(entry => {
+                  const detailText = formatActionLogDetails(entry);
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="alert-action-log-item"
+                      title={detailText || ACTION_LABELS[entry.action]}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDetail('history');
+                      }}
+                    >
+                      <span className="history-icon">{ACTION_ICONS[entry.action]}</span>
+                      <div className="history-content">
+                        <div className="history-row">
+                          <span className="history-action">{ACTION_LABELS[entry.action]}</span>
+                          <span className="history-time">{formatRelativeTime(entry.timestamp)}</span>
+                        </div>
+                        {detailText && (
+                          <span className="history-details">
+                            {detailText}
+                          </span>
+                        )}
                       </div>
-                      {formatActionLogDetails(entry) && (
-                        <span className="history-details">
-                          {formatActionLogDetails(entry)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1171,11 +1195,18 @@ interface AlertDetailPanelProps {
   alerts: EnrichedAlert[];
   onClose: () => void;
   onStateChange: () => void;
+  initialTab?: DetailTab;
 }
 
-function AlertDetailPanel({ alertId, alerts, onClose, onStateChange }: AlertDetailPanelProps) {
+function AlertDetailPanel({ alertId, alerts, onClose, onStateChange, initialTab }: AlertDetailPanelProps) {
   const alert = alerts.find(a => a.id === alertId);
-  const [activeTab, setActiveTab] = useState<'details' | 'playbook' | 'history'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'playbook' | 'history'>(initialTab || 'details');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   
   const notes = getAlertNotes(alertId, alerts);
   const actionLog = getAlertActionLog(alertId, alerts);
