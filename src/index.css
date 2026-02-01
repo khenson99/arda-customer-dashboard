@@ -338,6 +338,34 @@ h3 {
   color: var(--text-primary);
 }
 
+/* Wide chart card for Activity by Customer */
+.chart-card-wide {
+  grid-column: span 2;
+}
+
+/* Full-width Activity Chart Container */
+.activity-chart-container {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.activity-chart-container .chart-card {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .chart-card-wide {
+    grid-column: span 1;
+  }
+}
+
+/* Last Activity styling */
+.last-activity {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 /* Loading state */
 .loading {
   display: flex;
@@ -1176,6 +1204,47 @@ h3 {
   overflow: auto;
 }
 
+.activity-table-virtual .activity-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.activity-table-virtual .activity-table thead {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.activity-table-virtual .activity-table thead th {
+  padding: var(--spacing-md);
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.activity-table-virtual .activity-table thead th:nth-child(1) {
+  width: 30%;
+}
+
+.activity-table-virtual .activity-table thead th:nth-child(2) {
+  width: 15%;
+}
+
+.activity-table-virtual .activity-table thead th:nth-child(3),
+.activity-table-virtual .activity-table thead th:nth-child(4),
+.activity-table-virtual .activity-table thead th:nth-child(5),
+.activity-table-virtual .activity-table thead th:nth-child(6) {
+  width: 13.75%;
+  text-align: right;
+}
+
 .activity-table-body {
   display: block;
   position: relative;
@@ -1191,10 +1260,32 @@ h3 {
   table-layout: fixed;
 }
 
+.activity-virtual-row td {
+  padding: var(--spacing-md);
+  vertical-align: middle;
+}
+
+.activity-virtual-row td:nth-child(1) {
+  width: 30%;
+}
+
+.activity-virtual-row td:nth-child(2) {
+  width: 15%;
+}
+
+.activity-virtual-row td:nth-child(3),
+.activity-virtual-row td:nth-child(4),
+.activity-virtual-row td:nth-child(5),
+.activity-virtual-row td:nth-child(6) {
+  width: 13.75%;
+  text-align: right;
+}
+
 .mini-sparkline {
   width: 70px;
   height: 20px;
 }
+
 
 .sparkline-empty {
   color: var(--text-muted);

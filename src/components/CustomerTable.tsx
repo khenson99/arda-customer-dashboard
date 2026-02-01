@@ -6,6 +6,22 @@ import { HealthScore } from './HealthScore';
 import { Sparkline } from './Sparkline';
 import type { CustomerMetrics } from '../lib/arda-client';
 
+// Helper function to format relative time
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  
+  if (diffDays > 30) return `${Math.floor(diffDays / 30)}mo ago`;
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMinutes > 0) return `${diffMinutes}m ago`;
+  return 'Just now';
+}
+
 interface CustomerTableProps {
   customers: CustomerMetrics[];
 }
@@ -80,6 +96,7 @@ export const CustomerTable = memo(function CustomerTable({
             <th>CSM</th>
             <th>Lifecycle</th>
             <th>Stage</th>
+            <th>Last Activity</th>
             <th>Engagement</th>
             <th>Items</th>
             <th>Kanban</th>
@@ -99,7 +116,7 @@ export const CustomerTable = memo(function CustomerTable({
           ))}
           {customers.length === 0 && (
             <tr>
-              <td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+              <td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                 No customers found
               </td>
             </tr>
@@ -164,6 +181,11 @@ const CustomerRow = memo(function CustomerRow({
       <td>
         <span className={`stage-badge ${customer.stage}`}>
           {customer.stage}
+        </span>
+      </td>
+      <td>
+        <span className="last-activity">
+          {formatRelativeTime(customer.lastActivityDate)}
         </span>
       </td>
       <td>

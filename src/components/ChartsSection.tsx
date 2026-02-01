@@ -54,10 +54,10 @@ export const ChartsSection = memo(function ChartsSection({
     ];
   }, [metrics]);
   
-  // Memoize activity data for bar chart
+  // Memoize activity data for bar chart - limit to 8 customers for readability
   const activityData = useMemo(() => 
-    metrics.slice(0, 15).map((c) => ({
-      name: c.tenantName.substring(0, 12),
+    metrics.slice(0, 8).map((c) => ({
+      name: (c.displayName || c.tenantName).substring(0, 12),
       items: c.itemCount,
       kanban: c.kanbanCardCount,
       orders: c.orderCount,
@@ -103,27 +103,33 @@ export const ChartsSection = memo(function ChartsSection({
         </div>
       </div>
 
-      {/* Activity by Customer */}
-      <div className="glass-card chart-card">
-        <h3>📈 Activity by Customer</h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={activityData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-            <XAxis 
-              dataKey="name" 
-              tick={axisTickStyle}
-              axisLine={axisLineStyle}
-            />
-            <YAxis 
-              tick={axisTickStyle}
-              axisLine={axisLineStyle}
-            />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Bar dataKey="items" fill="#6366f1" name="Items" />
-            <Bar dataKey="kanban" fill="#8b5cf6" name="Kanban" />
-            <Bar dataKey="orders" fill="#10b981" name="Orders" />
-          </BarChart>
-        </ResponsiveContainer>
+      {/* Activity by Customer - Full Width */}
+      <div className="activity-chart-container">
+        <div className="glass-card chart-card">
+          <h3>📈 Activity by Customer</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={activityData} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
+              <XAxis 
+                dataKey="name" 
+                tick={{ fill: '#374151', fontSize: 12, fontWeight: 500 }}
+                axisLine={{ stroke: '#e5e7eb' }}
+                angle={-35}
+                textAnchor="end"
+                height={60}
+                interval={0}
+              />
+              <YAxis 
+                tick={{ fill: '#374151', fontSize: 11 }}
+                axisLine={{ stroke: '#e5e7eb' }}
+              />
+              <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+              <Bar dataKey="items" fill="#FC5928" name="Items" radius={[4, 4, 0, 0]} barSize={40} />
+              <Bar dataKey="kanban" fill="#3b82f6" name="Kanban" radius={[4, 4, 0, 0]} barSize={40} />
+              <Bar dataKey="orders" fill="#22c55e" name="Orders" radius={[4, 4, 0, 0]} barSize={40} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Stage Distribution */}
